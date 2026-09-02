@@ -1,30 +1,37 @@
 services:
-  surrealdb:
-    image: surrealdb/surrealdb:v2
-    volumes:
-      - ./surreal_data:/mydata
+  postgres:
+    image: pgvector/pgvector:pg17
     environment:
-      - SURREAL_EXPERIMENTAL_GRAPHQL=true
+      POSTGRES_USER: open_notebook
+      POSTGRES_PASSWORD: open_notebook
+      POSTGRES_DB: open_notebook
     ports:
-      # Localhost only — the database uses default credentials, so never
-      # publish this port on 0.0.0.0
-      - "127.0.0.1:8000:8000"
-    command: start --log info --user root --pass root rocksdb:/mydata/mydatabase.db
-    pull_policy: always
-    user: root
-    restart: always
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U open_notebook -d open_notebook"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
   open_notebook:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
     ports:
       - "8502:8502"
       - "5055:5055"
     env_file:
       - ./docker.env
+    environment:
+      DATABASE_URL: postgresql://open_notebook:open_notebook@postgres:5432/open_notebook
+      POSTGRES_URL: postgresql://open_notebook:open_notebook@postgres:5432/open_notebook
     depends_on:
-      - surrealdb
+      postgres:
+        condition: service_healthy
     volumes:
       - ./notebook_data:/app/data
-    restart: always
-    
+    restart: unless-stopped

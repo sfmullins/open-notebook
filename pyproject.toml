@@ -73,6 +73,12 @@ dev = [
     "ruff>=0.14.13",
     "types-requests>=2.32.4.20250913",
 ]
+# The old database client is intentionally not a runtime dependency.  It is
+# available only to the one-time importer used when upgrading an existing
+# SurrealDB installation to PostgreSQL.
+migration = [
+    "surrealdb>=1.0.4,<2",
+]
 notebooks = [
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.5",

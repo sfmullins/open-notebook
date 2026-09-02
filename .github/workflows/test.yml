@@ -17,6 +17,23 @@ jobs:
   backend:
     name: Backend Tests
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+      OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-test-key
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: open_notebook
+          POSTGRES_PASSWORD: open_notebook
+          POSTGRES_DB: open_notebook
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U open_notebook -d open_notebook"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout
         uses: actions/checkout@v6

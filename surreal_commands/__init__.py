@@ -9,6 +9,7 @@ be recovered without duplicating healthy long-running work.
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from datetime import datetime, timezone
 import inspect
 import json
@@ -18,9 +19,9 @@ import threading
 from typing import Any, Awaitable, Callable, Dict, Optional, Type
 from uuid import UUID, uuid4
 
+import psycopg
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
-import psycopg
 
 from open_notebook.database.postgres import (
     db_connection,
@@ -244,7 +245,13 @@ async def get_command_statuses(command_ids: list[str]) -> dict[str, CommandStatu
     return {status.id: status for status in statuses}
 
 
-async def _set_completed(job_id: UUID, output: Any, started: datetime) -> None:
+async def _set_completed(
+    job_id: UUID,
+    output: Any,
+    started: datetime,
+    worker_id: str,
+) -> bool:
+    """Commit a result only if this worker still owns the running lease."""
     completed = datetime.now(timezone.utc)
     if isinstance(output, BaseModel):
         payload = output.model_dump(mode="json")
@@ -257,53 +264,64 @@ async def _set_completed(job_id: UUID, output: Any, started: datetime) -> None:
         "completed_at": completed.isoformat(),
     }
     async with db_connection() as connection:
-        await connection.execute(
+        cursor = await connection.execute(
             """
             UPDATE command_job
             SET status='completed', result=%s::jsonb, error_message=NULL,
                 lease_until=NULL, worker_id=NULL, updated=now()
-            WHERE id=%s
+            WHERE id=%s AND status='running' AND worker_id=%s
             """,
-            (json.dumps(payload), job_id),
+            (json.dumps(payload), job_id, worker_id),
         )
         await connection.commit()
+        return bool(cursor.rowcount)
 
 
-async def _set_failed(job_id: UUID, message: str) -> None:
+async def _set_failed(job_id: UUID, message: str, worker_id: str | None = None) -> bool:
+    if worker_id is None:
+        where = "id=%s"
+        values: tuple[Any, ...] = (message[:4000], job_id)
+    else:
+        where = "id=%s AND status='running' AND worker_id=%s"
+        values = (message[:4000], job_id, worker_id)
     async with db_connection() as connection:
-        await connection.execute(
-            """
+        cursor = await connection.execute(
+            f"""
             UPDATE command_job
             SET status='failed', error_message=%s, lease_until=NULL,
                 worker_id=NULL, updated=now()
-            WHERE id=%s
+            WHERE {where}
             """,
-            (message[:4000], job_id),
+            values,
         )
         await connection.commit()
+        return bool(cursor.rowcount)
 
 
 async def _invoke_job(job: dict[str, Any]) -> None:
     key = (job["app"], job["command_name"])
     registered = _REGISTRY.get(key)
     job_id: UUID = job["id"]
+    worker_id = str(job.get("worker_id") or "")
     if not registered:
         await _set_failed(
-            job_id, f"Command handler not registered: {key[0]}/{key[1]}"
+            job_id,
+            f"Command handler not registered: {key[0]}/{key[1]}",
+            worker_id or None,
         )
         return
 
     # API-side submission can happen before command modules are registered in
-    # that process. The worker *does* have the decorator metadata, so upgrade
-    # max_attempts at execution time rather than accidentally collapsing a
-    # retryable command to one attempt.
+    # that process. The worker does have decorator metadata, so upgrade the
+    # persisted retry budget when execution begins.
     registered_max = _registered_max_attempts(registered)
     if int(job.get("max_attempts") or 1) < registered_max:
         job["max_attempts"] = registered_max
         async with db_connection() as connection:
             await connection.execute(
-                "UPDATE command_job SET max_attempts=%s WHERE id=%s",
-                (registered_max, job_id),
+                "UPDATE command_job SET max_attempts=%s "
+                "WHERE id=%s AND status='running' AND worker_id=%s",
+                (registered_max, job_id, worker_id),
             )
             await connection.commit()
 
@@ -316,7 +334,11 @@ async def _invoke_job(job: dict[str, Any]) -> None:
     except Exception as exc:
         await _handle_failure(job, registered, exc)
         return
-    await _set_completed(job_id, output, started)
+
+    if not await _set_completed(job_id, output, started, worker_id):
+        logger.warning(
+            f"Discarded result for command {job_id}: worker {worker_id} no longer owns the lease"
+        )
 
 
 def _is_stop_exception(registered: _RegisteredCommand, exc: Exception) -> bool:
@@ -331,10 +353,11 @@ async def _handle_failure(
     max_attempts = max(
         int(job.get("max_attempts") or 1), _registered_max_attempts(registered)
     )
+    worker_id = str(job.get("worker_id") or "")
     message = f"{type(exc).__name__}: {exc}"
     if _is_stop_exception(registered, exc) or attempt >= max_attempts:
         logger.error(f"Command {job['id']} failed permanently: {message}")
-        await _set_failed(job["id"], message)
+        await _set_failed(job["id"], message, worker_id or None)
         return
 
     wait_min = float(registered.retry.get("wait_min", 1))
@@ -345,15 +368,43 @@ async def _handle_failure(
         f"Command {job['id']} retry {attempt}/{max_attempts} in {delay:.1f}s: {message}"
     )
     async with db_connection() as connection:
-        await connection.execute(
+        cursor = await connection.execute(
             """
             UPDATE command_job
             SET status='queued', run_after=now() + (%s * interval '1 second'),
                 max_attempts=%s, error_message=%s, lease_until=NULL,
                 worker_id=NULL, updated=now()
-            WHERE id=%s
+            WHERE id=%s AND status='running' AND worker_id=%s
             """,
-            (delay, max_attempts, message[:4000], job["id"]),
+            (delay, max_attempts, message[:4000], job["id"], worker_id),
+        )
+        await connection.commit()
+    if not cursor.rowcount:
+        logger.warning(
+            f"Discarded retry transition for command {job['id']}: lease ownership was lost"
+        )
+
+
+async def _expire_exhausted_jobs() -> None:
+    """Fail abandoned jobs that have already consumed their retry budget."""
+    async with db_connection() as connection:
+        await connection.execute(
+            """
+            UPDATE command_job
+            SET status='failed',
+                error_message=COALESCE(error_message, 'Worker lease expired after final attempt'),
+                lease_until=NULL, worker_id=NULL, updated=now()
+            WHERE status='running' AND lease_until < now() AND attempt >= max_attempts
+            """
+        )
+        await connection.execute(
+            """
+            UPDATE command_job
+            SET status='failed',
+                error_message=COALESCE(error_message, 'Retry budget exhausted'),
+                updated=now()
+            WHERE status='queued' AND attempt >= max_attempts
+            """
         )
         await connection.commit()
 
@@ -363,14 +414,19 @@ async def claim_job(
 ) -> Optional[dict[str, Any]]:
     """Atomically claim the oldest runnable job, including abandoned leases."""
     await ensure_schema()
+    await _expire_exhausted_jobs()
     async with db_connection() as connection:
         row = await (
             await connection.execute(
                 """
                 WITH candidate AS (
                     SELECT id FROM command_job
-                    WHERE (status='queued' AND run_after <= now())
-                       OR (status='running' AND lease_until IS NOT NULL AND lease_until < now())
+                    WHERE (
+                        status='queued' AND run_after <= now() AND attempt < max_attempts
+                    ) OR (
+                        status='running' AND lease_until IS NOT NULL
+                        AND lease_until < now() AND attempt < max_attempts
+                    )
                     ORDER BY created
                     FOR UPDATE SKIP LOCKED
                     LIMIT 1
@@ -408,30 +464,42 @@ async def run_claimed_job(
     job: dict[str, Any], worker_id: str, lease_seconds: int = 300
 ) -> None:
     """Execute one claimed job while renewing its lease in the background."""
-    stop = asyncio.Event()
+    job_task = asyncio.create_task(_invoke_job(job))
 
     async def renew() -> None:
         interval = max(5, lease_seconds // 3)
-        while not stop.is_set():
+        while not job_task.done():
+            await asyncio.sleep(interval)
+            if job_task.done():
+                return
             try:
-                await asyncio.wait_for(stop.wait(), timeout=interval)
-            except asyncio.TimeoutError:
-                if not await heartbeat(job["id"], worker_id, lease_seconds):
-                    logger.warning(f"Lost lease for command {job['id']}")
-                    return
+                owned = await heartbeat(job["id"], worker_id, lease_seconds)
+            except Exception as exc:
+                # A transient DB outage should not immediately kill useful work;
+                # once connectivity returns, ownership is re-checked. If another
+                # worker reclaimed the expired lease, the next heartbeat returns
+                # false and the old task is cancelled/fenced.
+                logger.warning(f"Heartbeat failed for command {job['id']}: {exc}")
+                continue
+            if not owned:
+                logger.warning(
+                    f"Lost lease for command {job['id']}; cancelling stale worker task"
+                )
+                job_task.cancel()
+                return
 
-    heartbeat_task = asyncio.create_task(renew())
+    renew_task = asyncio.create_task(renew())
     try:
-        await _invoke_job(job)
+        await job_task
+    except asyncio.CancelledError:
+        logger.warning(f"Command {job['id']} execution cancelled after lease loss")
     finally:
-        stop.set()
-        await heartbeat_task
+        renew_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await renew_task
 
 
-async def _execute_specific(command_id: str) -> CommandStatus:
-    await ensure_schema()
-    job_id = _uuid_from_command_id(command_id)
-    worker_id = f"inline:{socket.gethostname()}:{threading.get_ident()}"
+async def _claim_specific(job_id: UUID, worker_id: str) -> dict[str, Any] | None:
     async with db_connection() as connection:
         row = await (
             await connection.execute(
@@ -439,19 +507,39 @@ async def _execute_specific(command_id: str) -> CommandStatus:
                 UPDATE command_job
                 SET status='running', attempt=attempt+1, worker_id=%s,
                     lease_until=now() + interval '1 hour', updated=now()
-                WHERE id=%s AND status='queued'
+                WHERE id=%s AND status='queued' AND run_after <= now()
+                  AND attempt < max_attempts
                 RETURNING *
                 """,
                 (worker_id, job_id),
             )
         ).fetchone()
         await connection.commit()
-    if row:
-        await _invoke_job(dict(row))
-    status = await get_command_status(command_id)
-    if status is None:
-        raise RuntimeError(f"Command disappeared: {command_id}")
-    return status
+    return dict(row) if row else None
+
+
+async def _execute_specific(command_id: str) -> CommandStatus:
+    """Execute one command inline, including its configured retry schedule."""
+    await ensure_schema()
+    job_id = _uuid_from_command_id(command_id)
+    worker_id = f"inline:{socket.gethostname()}:{threading.get_ident()}:{job_id}"
+
+    while True:
+        status = await get_command_status(command_id)
+        if status is None:
+            raise RuntimeError(f"Command disappeared: {command_id}")
+        if status.status in {"completed", "failed"}:
+            return status
+
+        claimed = await _claim_specific(job_id, worker_id)
+        if claimed is not None:
+            await _invoke_job(claimed)
+            continue
+
+        # It is either waiting for retry run_after or was claimed by a regular
+        # worker in the small race between submission and inline claim. Poll at
+        # a low rate; the outer wait_for enforces the caller's timeout.
+        await asyncio.sleep(0.1)
 
 
 def execute_command_sync(

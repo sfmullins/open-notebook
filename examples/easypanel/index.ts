@@ -11,31 +11,26 @@ export function generate(input: Input): Output {
   const appPassword = input.appPassword || randomPassword();
   const databasePassword = randomPassword();
   const encryptionKey = randomString(64);
+  const databaseHost = `$(PROJECT_NAME)_${input.databaseServiceName}`;
 
   services.push({
     type: "app",
     data: {
       serviceName: input.databaseServiceName,
-      env: [`SURREAL_EXPERIMENTAL_GRAPHQL=true`].join("\n"),
+      env: [
+        `POSTGRES_USER=open_notebook`,
+        `POSTGRES_PASSWORD=${databasePassword}`,
+        `POSTGRES_DB=open_notebook`,
+      ].join("\n"),
       source: {
         type: "image",
         image: input.databaseServiceImage,
       },
-      deploy: {
-        command: [
-          "start",
-          "--log info",
-          "--user root",
-          `--pass ${databasePassword}`,
-          "--bind 0.0.0.0:8000",
-          "rocksdb:/mydata/mydatabase.db",
-        ].join(" "),
-      },
       mounts: [
         {
           type: "volume",
-          name: "surreal-data",
-          mountPath: "/mydata",
+          name: "postgres-data",
+          mountPath: "/var/lib/postgresql/data",
         },
       ],
     },
@@ -50,11 +45,8 @@ export function generate(input: Input): Output {
         `INTERNAL_API_URL=http://localhost:5055`,
         `OPEN_NOTEBOOK_ENCRYPTION_KEY=${encryptionKey}`,
         `OPEN_NOTEBOOK_PASSWORD=${appPassword}`,
-        `SURREAL_URL=ws://$(PROJECT_NAME)_${input.databaseServiceName}:8000/rpc`,
-        `SURREAL_USER=root`,
-        `SURREAL_PASSWORD=${databasePassword}`,
-        `SURREAL_NAMESPACE=open_notebook`,
-        `SURREAL_DATABASE=open_notebook`,
+        `DATABASE_URL=postgresql://open_notebook:${databasePassword}@${databaseHost}:5432/open_notebook`,
+        `POSTGRES_URL=postgresql://open_notebook:${databasePassword}@${databaseHost}:5432/open_notebook`,
       ].join("\n"),
       source: {
         type: "image",

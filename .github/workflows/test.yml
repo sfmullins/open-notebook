@@ -4,10 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches:
-      - main
-      - "feat/**"
-      - "fix/**"
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -23,7 +20,7 @@ env:
 
 jobs:
   runtime-boundary:
-    name: Runtime boundary
+    name: Runtime and licence boundary
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -65,6 +62,9 @@ jobs:
 
       - name: Install Python
         run: uv python install "$PYTHON_VERSION"
+
+      - name: Verify dependency lock
+        run: uv lock --check
 
       - name: Install locked dependencies
         run: uv sync --frozen --group dev

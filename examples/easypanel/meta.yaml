@@ -6,19 +6,18 @@ description:
 instructions:
   Deploy the template, open the generated EasyPanel domain, and log in with the
   configured Open Notebook password. Configure AI providers from Settings > API
-  Keys after the first login. If the password field is left blank, a random
-  password is generated and stored as OPEN_NOTEBOOK_PASSWORD in the app service
-  environment.
+  Keys after the first login. This fork requires a PostgreSQL-native application
+  image; override the image field if you publish it under a different registry.
 changeLog:
+  - date: 2026-09-02
+    description: PostgreSQL/pgvector migration; removed SurrealDB runtime
   - date: 2026-06-19
-    description: First release
+    description: First upstream release
 links:
   - label: Website
     url: https://www.open-notebook.ai
-  - label: Documentation
-    url: https://github.com/lfnovo/open-notebook/tree/main/docs
-  - label: Github
-    url: https://github.com/lfnovo/open-notebook
+  - label: Fork
+    url: https://github.com/sfmullins/open-notebook
 contributors:
   - name: nyxst4ck
     url: https://github.com/nyxst4ck
@@ -36,16 +35,16 @@ schema:
       default: open-notebook
     appServiceImage:
       type: string
-      title: App Service Image
-      default: lfnovo/open_notebook:1.10.0
+      title: PostgreSQL-native App Service Image
+      default: ghcr.io/sfmullins/open-notebook:latest
     databaseServiceName:
       type: string
       title: Database Service Name
-      default: surrealdb
+      default: postgres
     databaseServiceImage:
       type: string
       title: Database Service Image
-      default: surrealdb/surrealdb:v2
+      default: pgvector/pgvector:pg17
     appPassword:
       type: string
       title: Open Notebook Password
@@ -53,8 +52,8 @@ schema:
 benefits:
   - title: One-click deployment
     description:
-      Creates the Open Notebook app and SurrealDB database services with the
-      required environment variables and persistent volumes.
+      Creates the Open Notebook app and PostgreSQL/pgvector database services
+      with persistent storage.
   - title: Secure defaults
     description:
       Generates database and encryption secrets during template creation and

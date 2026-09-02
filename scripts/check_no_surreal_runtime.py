@@ -5,10 +5,10 @@ Historical documentation, tests and the one-time SurrealDB -> PostgreSQL importe
 may describe or connect to SurrealDB. Normal application, deployment and package
 surfaces may not import the SurrealDB SDK or ship the SurrealDB server image/binary.
 
-This is deliberately narrower than banning the word "SurrealQL": the upstream
-Open Notebook code is MIT-licensed and its query strings are not the BSL-licensed
-SurrealDB server implementation. The gate protects the actual runtime/licensing
-boundary while the remaining query compatibility layer is retired separately.
+This deliberately does not ban the word "SurrealQL": upstream Open Notebook is
+MIT-licensed and its query strings are not the BSL-licensed SurrealDB server
+implementation. Query compatibility is a technical migration concern; this gate
+protects the actual runtime and distribution boundary.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import sys
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -25,6 +26,7 @@ RUNTIME_DIRS = (
     ROOT / "open_notebook",
     ROOT / "deploy",
     ROOT / "examples",
+    ROOT / "scripts",
 )
 ROOT_RUNTIME_FILES = (
     ROOT / "Dockerfile",
@@ -34,9 +36,11 @@ ROOT_RUNTIME_FILES = (
     ROOT / "dev-init.sh",
     ROOT / "start.sh",
     ROOT / "supervisord.conf",
-    ROOT / "supervisord.surrealdb.conf",
 )
-
+ALLOWED_RUNTIME_REFERENCES = {
+    ROOT / "scripts" / "migrate_surreal_to_postgres.py",
+    ROOT / "scripts" / "check_no_surreal_runtime.py",
+}
 TEXT_SUFFIXES = {".py", ".toml", ".yml", ".yaml", ".sh", ".conf", ".env", ""}
 
 PROHIBITED_PATTERNS = (
@@ -60,9 +64,7 @@ def runtime_files() -> list[Path]:
 def check_runtime() -> list[str]:
     failures: list[str] = []
     for path in runtime_files():
-        # This importer is an explicit, one-time migration boundary and is not
-        # part of normal application/runtime packaging.
-        if path == ROOT / "scripts" / "migrate_surreal_to_postgres.py":
+        if path in ALLOWED_RUNTIME_REFERENCES:
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -74,12 +76,28 @@ def check_runtime() -> list[str]:
     return failures
 
 
+def dependency_name(requirement: str) -> str:
+    return re.split(r"[<>=!~;\[\s]", requirement, maxsplit=1)[0].strip().lower()
+
+
 def check_packaging() -> list[str]:
     failures: list[str] = []
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    if re.search(r"[\"']surrealdb(?:\[[^\]]+\])?[^\"']*[\"']", pyproject, re.I):
-        failures.append("pyproject.toml: SurrealDB dependency is prohibited")
-    if "surrealdb*" in pyproject:
+    pyproject_path = ROOT / "pyproject.toml"
+    with pyproject_path.open("rb") as handle:
+        pyproject = tomllib.load(handle)
+
+    dependencies = pyproject.get("project", {}).get("dependencies", [])
+    if any(dependency_name(str(item)) == "surrealdb" for item in dependencies):
+        failures.append("pyproject.toml: external SurrealDB SDK dependency is prohibited")
+
+    package_include = (
+        pyproject.get("tool", {})
+        .get("setuptools", {})
+        .get("packages", {})
+        .get("find", {})
+        .get("include", [])
+    )
+    if any(str(item).startswith("surrealdb") for item in package_include):
         failures.append("pyproject.toml: local surrealdb compatibility package is still shipped")
 
     lock = ROOT / "uv.lock"
@@ -97,7 +115,7 @@ def main() -> int:
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
         print(
-            "\nAllowed exception: scripts/migrate_surreal_to_postgres.py and historical/docs/test references.\n"
+            "\nAllowed exceptions: the one-time SurrealDB importer and historical/docs/test references.\n"
             "Normal runtime and deployment surfaces must remain PostgreSQL-only.",
             file=sys.stderr,
         )

@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import os
 import pkgutil
 import signal
 import socket
-import os
 
 from loguru import logger
 
@@ -26,7 +26,9 @@ def import_command_modules(package_name: str) -> None:
         importlib.import_module(module.name)
 
 
-async def worker_loop(worker_id: str, lease_seconds: int, poll_seconds: float, stop: asyncio.Event) -> None:
+async def worker_loop(
+    worker_id: str, lease_seconds: int, poll_seconds: float, stop: asyncio.Event
+) -> None:
     while not stop.is_set():
         job = await claim_job(worker_id, lease_seconds)
         if not job:
@@ -69,7 +71,9 @@ def main() -> None:
     parser.add_argument("--poll-seconds", type=float, default=0.5)
     args = parser.parse_args()
 
-    for package in [part.strip() for part in args.import_modules.split(",") if part.strip()]:
+    for package in [
+        part.strip() for part in args.import_modules.split(",") if part.strip()
+    ]:
         import_command_modules(package)
 
     asyncio.run(

@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches:
+      - main
+      - "feat/**"
+      - "fix/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "22"
+
+jobs:
+  runtime-boundary:
+    name: Runtime boundary
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Enforce database/runtime boundary
+        run: python3 scripts/check_no_surreal_runtime.py
+
+  backend:
+    name: Backend quality and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+      POSTGRES_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+      OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-test-key
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: open_notebook
+          POSTGRES_PASSWORD: open_notebook
+          POSTGRES_DB: open_notebook
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U open_notebook -d open_notebook"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install "$PYTHON_VERSION"
+
+      - name: Install locked dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Mypy
+        run: uv run python -m mypy .
+
+      - name: Pytest
+        run: uv run pytest tests/ -v --cov=open_notebook --cov=api --cov-report=term-missing --cov-report=xml
+
+      - name: Upload backend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend quality and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Tests
+        run: npm run test:coverage
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload frontend coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          if-no-files-found: ignore
+
+  docs:
+    name: Documentation links
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check relative Markdown links
+        run: python3 scripts/check_md_links.py

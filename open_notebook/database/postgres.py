@@ -1,7 +1,7 @@
 """PostgreSQL storage primitives for the dockerless runtime.
 
 The migration deliberately keeps the externally visible ``table:key`` IDs while
-moving persistence to PostgreSQL.  Domain-specific repositories can be moved to
+moving persistence to PostgreSQL. Domain-specific repositories can be moved to
 native tables incrementally; this module provides the common pool, bootstrap and
 generic record/relation primitives needed during that transition.
 """
@@ -12,17 +12,19 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import json
 import os
-from typing import Any, AsyncIterator, Mapping, Sequence
+from typing import Any, AsyncIterator, Mapping
 from uuid import uuid4
 
 from loguru import logger
-from psycopg import AsyncConnection, sql
+from psycopg import AsyncConnection
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from open_notebook.database.record_id import RecordID
 
-_DEFAULT_DATABASE_URL = "postgresql://open_notebook:open_notebook@localhost:5432/open_notebook"
+_DEFAULT_DATABASE_URL = (
+    "postgresql://open_notebook:open_notebook@localhost:5432/open_notebook"
+)
 _pool: AsyncConnectionPool | None = None
 _schema_ready = False
 
@@ -68,19 +70,15 @@ async def db_connection() -> AsyncIterator[AsyncConnection]:
 
 
 async def close_pool() -> None:
-    global _pool
+    global _pool, _schema_ready
     if _pool is not None:
         await _pool.close()
         _pool = None
+    _schema_ready = False
 
 
 async def ensure_schema() -> None:
-    """Create the PostgreSQL foundation schema idempotently.
-
-    This is intentionally bootstrap-only.  Versioned PostgreSQL migrations are
-    layered on top of it by ``postgres_migrate``; keeping bootstrap idempotent
-    also lets the worker safely start before the API after a machine reboot.
-    """
+    """Create the PostgreSQL foundation schema idempotently."""
     global _schema_ready
     if _schema_ready:
         return
@@ -97,7 +95,8 @@ async def ensure_schema() -> None:
             PRIMARY KEY (table_name, record_key)
         )
         """,
-        "CREATE INDEX IF NOT EXISTS on_record_table_updated_idx ON on_record(table_name, updated DESC)",
+        "CREATE INDEX IF NOT EXISTS on_record_table_updated_idx "
+        "ON on_record(table_name, updated DESC)",
         """
         CREATE TABLE IF NOT EXISTS on_relation (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -111,8 +110,10 @@ async def ensure_schema() -> None:
             UNIQUE(kind, source_table, source_key, target_table, target_key)
         )
         """,
-        "CREATE INDEX IF NOT EXISTS on_relation_source_idx ON on_relation(kind, source_table, source_key)",
-        "CREATE INDEX IF NOT EXISTS on_relation_target_idx ON on_relation(kind, target_table, target_key)",
+        "CREATE INDEX IF NOT EXISTS on_relation_source_idx "
+        "ON on_relation(kind, source_table, source_key)",
+        "CREATE INDEX IF NOT EXISTS on_relation_target_idx "
+        "ON on_relation(kind, target_table, target_key)",
         """
         CREATE TABLE IF NOT EXISTS source_embedding_pg (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -124,7 +125,8 @@ async def ensure_schema() -> None:
             UNIQUE(source_key, order_index)
         )
         """,
-        "CREATE INDEX IF NOT EXISTS source_embedding_pg_source_idx ON source_embedding_pg(source_key, order_index)",
+        "CREATE INDEX IF NOT EXISTS source_embedding_pg_source_idx "
+        "ON source_embedding_pg(source_key, order_index)",
         """
         CREATE TABLE IF NOT EXISTS command_job (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -144,7 +146,8 @@ async def ensure_schema() -> None:
             updated timestamptz NOT NULL DEFAULT now()
         )
         """,
-        "CREATE INDEX IF NOT EXISTS command_job_claim_idx ON command_job(status, run_after, lease_until, created)",
+        "CREATE INDEX IF NOT EXISTS command_job_claim_idx "
+        "ON command_job(status, run_after, lease_until, created)",
         """
         CREATE TABLE IF NOT EXISTS schema_migration (
             version integer PRIMARY KEY,
@@ -163,7 +166,10 @@ async def ensure_schema() -> None:
     logger.debug("PostgreSQL foundation schema is ready")
 
 
-async def create_record(table: str, data: Mapping[str, Any], record_key: str | None = None) -> dict[str, Any]:
+async def create_record(
+    table: str, data: Mapping[str, Any], record_key: str | None = None
+) -> dict[str, Any]:
+    await ensure_schema()
     key = record_key or str(uuid4())
     now = datetime.now(timezone.utc)
     payload = normalize_json({k: v for k, v in data.items() if k != "id"})
@@ -181,14 +187,18 @@ async def create_record(table: str, data: Mapping[str, Any], record_key: str | N
             )
         ).fetchone()
         await connection.commit()
+    if row is None:
+        raise RuntimeError("PostgreSQL did not return the created record")
     return record_row(row)
 
 
 async def get_record(record_id: RecordID) -> dict[str, Any] | None:
+    await ensure_schema()
     async with db_connection() as connection:
         row = await (
             await connection.execute(
-                "SELECT table_name, record_key, data, created, updated FROM on_record WHERE table_name=%s AND record_key=%s",
+                "SELECT table_name, record_key, data, created, updated "
+                "FROM on_record WHERE table_name=%s AND record_key=%s",
                 (record_id.table, record_id.id),
             )
         ).fetchone()
@@ -196,17 +206,22 @@ async def get_record(record_id: RecordID) -> dict[str, Any] | None:
 
 
 async def list_records(table: str) -> list[dict[str, Any]]:
+    await ensure_schema()
     async with db_connection() as connection:
         rows = await (
             await connection.execute(
-                "SELECT table_name, record_key, data, created, updated FROM on_record WHERE table_name=%s",
+                "SELECT table_name, record_key, data, created, updated "
+                "FROM on_record WHERE table_name=%s",
                 (table,),
             )
         ).fetchall()
     return [record_row(row) for row in rows]
 
 
-async def update_record(record_id: RecordID, data: Mapping[str, Any], *, upsert: bool = False) -> dict[str, Any] | None:
+async def update_record(
+    record_id: RecordID, data: Mapping[str, Any], *, upsert: bool = False
+) -> dict[str, Any] | None:
+    await ensure_schema()
     payload = normalize_json({k: v for k, v in data.items() if k != "id"})
     now = datetime.now(timezone.utc)
     payload["updated"] = now.isoformat()
@@ -221,7 +236,13 @@ async def update_record(record_id: RecordID, data: Mapping[str, Any], *, upsert:
                     SET data = on_record.data || EXCLUDED.data, updated = EXCLUDED.updated
                     RETURNING table_name, record_key, data, created, updated
                     """,
-                    (record_id.table, record_id.id, json.dumps(payload), now, now),
+                    (
+                        record_id.table,
+                        record_id.id,
+                        json.dumps(payload),
+                        now,
+                        now,
+                    ),
                 )
             ).fetchone()
         else:
@@ -240,36 +261,59 @@ async def update_record(record_id: RecordID, data: Mapping[str, Any], *, upsert:
 
 
 async def delete_record(record_id: RecordID) -> bool:
+    await ensure_schema()
     async with db_connection() as connection:
         cursor = await connection.execute(
             "DELETE FROM on_record WHERE table_name=%s AND record_key=%s",
             (record_id.table, record_id.id),
         )
         await connection.execute(
-            "DELETE FROM on_relation WHERE (source_table=%s AND source_key=%s) OR (target_table=%s AND target_key=%s)",
+            "DELETE FROM on_relation "
+            "WHERE (source_table=%s AND source_key=%s) "
+            "OR (target_table=%s AND target_key=%s)",
             (record_id.table, record_id.id, record_id.table, record_id.id),
         )
+        if record_id.table == "source":
+            await connection.execute(
+                "DELETE FROM source_embedding_pg WHERE source_key=%s",
+                (record_id.id,),
+            )
         await connection.commit()
         return bool(cursor.rowcount)
 
 
-async def relate(source: RecordID, kind: str, target: RecordID, data: Mapping[str, Any] | None = None) -> dict[str, Any]:
+async def relate(
+    source: RecordID,
+    kind: str,
+    target: RecordID,
+    data: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    await ensure_schema()
     payload = normalize_json(data or {})
     async with db_connection() as connection:
         row = await (
             await connection.execute(
                 """
-                INSERT INTO on_relation(kind, source_table, source_key, target_table, target_key, data)
-                VALUES (%s,%s,%s,%s,%s,%s::jsonb)
+                INSERT INTO on_relation(
+                    kind, source_table, source_key, target_table, target_key, data
+                ) VALUES (%s,%s,%s,%s,%s,%s::jsonb)
                 ON CONFLICT(kind, source_table, source_key, target_table, target_key)
                 DO UPDATE SET data=EXCLUDED.data
                 RETURNING *
                 """,
-                (kind, source.table, source.id, target.table, target.id, json.dumps(payload)),
+                (
+                    kind,
+                    source.table,
+                    source.id,
+                    target.table,
+                    target.id,
+                    json.dumps(payload),
+                ),
             )
         ).fetchone()
         await connection.commit()
-    assert row is not None
+    if row is None:
+        raise RuntimeError("PostgreSQL did not return the relation")
     return relation_row(row)
 
 

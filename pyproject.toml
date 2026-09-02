@@ -52,12 +52,13 @@ dependencies = [
 [project.scripts]
 surreal-commands-worker = "surreal_commands.worker:main"
 
-[tool.setuptools]
-package-dir = {"open_notebook" = "open_notebook"}
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["open_notebook*", "api*", "commands*", "surreal_commands*", "surrealdb*"]
+exclude = ["tests*", "frontend*"]
 
 [tool.setuptools.package-data]
 open_notebook = ["ai/assets/*"]
-
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -72,12 +73,6 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff>=0.14.13",
     "types-requests>=2.32.4.20250913",
-]
-# The old database client is intentionally not a runtime dependency.  It is
-# available only to the one-time importer used when upgrading an existing
-# SurrealDB installation to PostgreSQL.
-migration = [
-    "surrealdb>=1.0.4,<2",
 ]
 notebooks = [
     "ipykernel>=6.29.5",

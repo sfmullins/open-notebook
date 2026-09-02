@@ -1,14 +1,14 @@
 """Database-neutral record identifiers.
 
 Open Notebook historically exposed SurrealDB record IDs (``table:key``) throughout
-its domain and API layers.  The PostgreSQL migration keeps that public contract
+its domain and API layers. The PostgreSQL migration keeps that public contract
 without importing the SurrealDB client.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 from typing import Union
 
 _TABLE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")

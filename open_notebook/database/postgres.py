@@ -8,10 +8,10 @@ generic record/relation primitives needed during that transition.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 import json
 import os
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Mapping
 from uuid import uuid4
 
@@ -127,6 +127,18 @@ async def ensure_schema() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS source_embedding_pg_source_idx "
         "ON source_embedding_pg(source_key, order_index)",
+        """
+        CREATE TABLE IF NOT EXISTS record_embedding_pg (
+            table_name text NOT NULL,
+            record_key text NOT NULL,
+            content text NOT NULL,
+            embedding vector NOT NULL,
+            updated timestamptz NOT NULL DEFAULT now(),
+            PRIMARY KEY(table_name, record_key)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS record_embedding_pg_table_idx "
+        "ON record_embedding_pg(table_name, record_key)",
         """
         CREATE TABLE IF NOT EXISTS command_job (
             id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -263,6 +275,34 @@ async def update_record(
 async def delete_record(record_id: RecordID) -> bool:
     await ensure_schema()
     async with db_connection() as connection:
+        if record_id.table == "source":
+            source_id = str(record_id)
+            # Remove dependent vector rows before deleting insight records.
+            await connection.execute(
+                """
+                DELETE FROM record_embedding_pg
+                WHERE table_name='source_insight'
+                  AND record_key IN (
+                      SELECT record_key FROM on_record
+                      WHERE table_name='source_insight' AND data->>'source'=%s
+                  )
+                """,
+                (source_id,),
+            )
+            await connection.execute(
+                "DELETE FROM on_record "
+                "WHERE table_name='source_insight' AND data->>'source'=%s",
+                (source_id,),
+            )
+            await connection.execute(
+                "DELETE FROM source_embedding_pg WHERE source_key=%s",
+                (record_id.id,),
+            )
+
+        await connection.execute(
+            "DELETE FROM record_embedding_pg WHERE table_name=%s AND record_key=%s",
+            (record_id.table, record_id.id),
+        )
         cursor = await connection.execute(
             "DELETE FROM on_record WHERE table_name=%s AND record_key=%s",
             (record_id.table, record_id.id),
@@ -273,11 +313,6 @@ async def delete_record(record_id: RecordID) -> bool:
             "OR (target_table=%s AND target_key=%s)",
             (record_id.table, record_id.id, record_id.table, record_id.id),
         )
-        if record_id.table == "source":
-            await connection.execute(
-                "DELETE FROM source_embedding_pg WHERE source_key=%s",
-                (record_id.id,),
-            )
         await connection.commit()
         return bool(cursor.rowcount)
 

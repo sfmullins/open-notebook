@@ -1,0 +1,39 @@
+name: PR2 residue inventory
+
+on:
+  push:
+    branches:
+      - fix/valt-runtime-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  inventory:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/valt-runtime-hardening
+          fetch-depth: 0
+      - name: Build residue inventory
+        shell: bash
+        run: |
+          {
+            echo '# PR2 residue inventory'
+            echo
+            for pattern in 'repo_query' 'legacy_query_compat' 'surreal_commands' 'surreal-commands' 'SURREAL_' 'asciidoc' 'imageio-ffmpeg' 'ffmpeg' ':latest'; do
+              echo "## ${pattern}"
+              rg -n --hidden --glob '!.git/**' --glob '!PR2_RUNTIME_RESIDUE.txt' --glob '!.github/workflows/pr2-residue-inventory.yml' -F "$pattern" . || true
+              echo
+            done
+          } > PR2_RUNTIME_RESIDUE.txt
+          rm .github/workflows/pr2-residue-inventory.yml
+      - name: Commit inventory
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: capture PR2 runtime residue inventory"
+          git push origin HEAD:fix/valt-runtime-hardening

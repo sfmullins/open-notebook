@@ -109,6 +109,44 @@ async def count_source_embeddings(source_id: RecordID) -> int:
     return int(row["n"]) if row else 0
 
 
+async def source_ids_with_embeddings() -> list[str]:
+    await ensure_embedding_schema()
+    async with db_connection() as connection:
+        rows = await (await connection.execute(
+            "SELECT DISTINCT source_key FROM source_embedding_pg ORDER BY source_key"
+        )).fetchall()
+    return [f"source:{row['source_key']}" for row in rows]
+
+
+async def count_distinct_source_embeddings() -> int:
+    await ensure_embedding_schema()
+    async with db_connection() as connection:
+        row = await (await connection.execute(
+            "SELECT count(DISTINCT source_key) AS n FROM source_embedding_pg"
+        )).fetchone()
+    return int(row['n']) if row else 0
+
+
+async def record_ids_with_embeddings(table: str) -> list[str]:
+    await ensure_embedding_schema()
+    async with db_connection() as connection:
+        rows = await (await connection.execute(
+            "SELECT record_key FROM record_embedding_pg WHERE table_name=%s ORDER BY record_key",
+            (table,),
+        )).fetchall()
+    return [f"{table}:{row['record_key']}" for row in rows]
+
+
+async def count_record_embeddings(table: str) -> int:
+    await ensure_embedding_schema()
+    async with db_connection() as connection:
+        row = await (await connection.execute(
+            "SELECT count(*) AS n FROM record_embedding_pg WHERE table_name=%s",
+            (table,),
+        )).fetchone()
+    return int(row['n']) if row else 0
+
+
 async def text_search_pg(
     keyword: str, results: int, source: bool = True, note: bool = True
 ) -> list[dict[str, Any]]:

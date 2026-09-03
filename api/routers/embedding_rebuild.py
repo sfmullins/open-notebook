@@ -9,7 +9,11 @@ from api.models import (
     RebuildStats,
     RebuildStatusResponse,
 )
-from open_notebook.database.repository import repo_query
+from open_notebook.database.embeddings import (
+    count_distinct_source_embeddings,
+    count_record_embeddings,
+)
+from open_notebook.database.repository import repo_count
 from open_notebook.exceptions import OpenNotebookError
 from command_queue import get_command_status
 
@@ -40,56 +44,25 @@ async def start_rebuild(request: RebuildRequest):
 
         if request.include_sources:
             if request.mode == "existing":
-                # Count sources with embeddings
-                result = await repo_query(
-                    """
-                    SELECT VALUE count(array::distinct(
-                        SELECT VALUE source.id
-                        FROM source_embedding
-                        WHERE embedding != none AND array::len(embedding) > 0
-                    )) as count FROM {}
-                    """
-                )
+                total_estimate += await count_distinct_source_embeddings()
             else:
-                # Count all sources with content
-                result = await repo_query(
-                    "SELECT VALUE count() as count FROM source WHERE full_text != none GROUP ALL"
+                total_estimate += await repo_count(
+                    "source", non_null_fields={"full_text"}, non_empty_fields={"full_text"}
                 )
-
-            if result and isinstance(result[0], dict):
-                total_estimate += result[0].get("count", 0)
-            elif result:
-                total_estimate += result[0] if isinstance(result[0], int) else 0
 
         if request.include_notes:
             if request.mode == "existing":
-                result = await repo_query(
-                    "SELECT VALUE count() as count FROM note WHERE embedding != none AND array::len(embedding) > 0 GROUP ALL"
-                )
+                total_estimate += await count_record_embeddings("note")
             else:
-                result = await repo_query(
-                    "SELECT VALUE count() as count FROM note WHERE content != none GROUP ALL"
+                total_estimate += await repo_count(
+                    "note", non_null_fields={"content"}, non_empty_fields={"content"}
                 )
-
-            if result and isinstance(result[0], dict):
-                total_estimate += result[0].get("count", 0)
-            elif result:
-                total_estimate += result[0] if isinstance(result[0], int) else 0
 
         if request.include_insights:
             if request.mode == "existing":
-                result = await repo_query(
-                    "SELECT VALUE count() as count FROM source_insight WHERE embedding != none AND array::len(embedding) > 0 GROUP ALL"
-                )
+                total_estimate += await count_record_embeddings("source_insight")
             else:
-                result = await repo_query(
-                    "SELECT VALUE count() as count FROM source_insight GROUP ALL"
-                )
-
-            if result and isinstance(result[0], dict):
-                total_estimate += result[0].get("count", 0)
-            elif result:
-                total_estimate += result[0] if isinstance(result[0], int) else 0
+                total_estimate += await repo_count("source_insight")
 
         logger.info(f"Estimated {total_estimate} items to process")
 

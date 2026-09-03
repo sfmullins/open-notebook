@@ -1,0 +1,89 @@
+name: PR1 mypy fix
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-types:
+    if: github.event.pull_request.number == 1 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Apply PostgreSQL row typing fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def rewrite(path: str, replacements: list[tuple[str, str]]) -> None:
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              original = text
+              for old, new in replacements:
+                  if old not in text:
+                      raise SystemExit(f'missing expected text in {path}: {old!r}')
+                  text = text.replace(old, new, 1)
+              file.write_text(text, encoding='utf-8')
+              print(f'updated {path}: {text != original}')
+
+          rewrite(
+              'open_notebook/database/postgres.py',
+              [
+                  ('from typing import Any, AsyncIterator, Mapping\n', 'from typing import Any, AsyncIterator, Mapping, cast\n'),
+                  ('from psycopg.rows import dict_row\n', 'from psycopg.rows import DictRow, dict_row\n'),
+                  ('async def db_connection() -> AsyncIterator[AsyncConnection]:\n', 'async def db_connection() -> AsyncIterator[AsyncConnection[DictRow]]:\n'),
+                  ('        yield connection\n', '        yield cast(AsyncConnection[DictRow], connection)\n'),
+              ],
+          )
+
+          rewrite(
+              'open_notebook/database/legacy_query_compat.py',
+              [
+                  ('        omit: set[str] = {"embedding"}\n        if "OMIT NOTE.CONTENT" in upper:\n            omit.add("content")\n        rows = await _linked_records("artifact", _rid(params["id"]), "note", omit=omit)\n',
+                   '        note_omit: set[str] = {"embedding"}\n        if "OMIT NOTE.CONTENT" in upper:\n            note_omit.add("content")\n        rows = await _linked_records(\n            "artifact", _rid(params["id"]), "note", omit=note_omit\n        )\n'),
+              ],
+          )
+
+          rewrite(
+              'open_notebook/database/repository_pg.py',
+              [
+                  ('        for source_id, rows in grouped.items():\n            created.extend(\n                await replace_source_embeddings(ensure_record_id(source_id), rows)\n            )\n',
+                   '        for source_ref, rows in grouped.items():\n            created.extend(\n                await replace_source_embeddings(ensure_record_id(source_ref), rows)\n            )\n'),
+                  ('    "repo_query",\n', ''),
+              ],
+          )
+          PY
+
+      - name: Install locked dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Verify backend typing and formatting
+        run: |
+          uv run ruff check . --fix
+          uv run ruff check .
+          uv run python -m mypy .
+          git diff --check
+
+      - name: Commit typing fixes
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No typing changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: type PostgreSQL dict-row connections"
+          git push origin "HEAD:${{ github.head_ref }}"

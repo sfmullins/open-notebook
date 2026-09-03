@@ -1,10 +1,10 @@
-"""Compatibility facade for the former surreal-commands registry module."""
+"""Registry facade for the PostgreSQL command queue."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from surreal_commands import _REGISTRY
+from command_queue import _REGISTRY
 
 
 @dataclass(frozen=True, slots=True)

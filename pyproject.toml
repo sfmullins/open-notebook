@@ -6,8 +6,8 @@ authors = [
     {name = "Luis Novo", email = "lfnovo@gmail.com"}
 ]
 readme = "README.md"
+license = "MIT"
 classifiers = [
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
 ]
@@ -40,21 +40,20 @@ dependencies = [
     "content-core>=2.0.4,<3",
     "ai-prompter>=0.4,<1",
     "esperanto>=2.25.1,<3",
-    "psycopg[binary]>=3.2,<4",
-    "psycopg-pool>=3.2,<4",
+    "asyncpg>=0.31,<1",
     "pgvector>=0.4,<1",
     "podcast-creator>=0.12.0,<1",
     "numpy>=2.4.1",
-    "pycountry>=26.2.16",
+    "iso639-lang>=2.6.3,<3",
     "babel>=2.18.0",
 ]
 
 [project.scripts]
-surreal-commands-worker = "surreal_commands.worker:main"
+open-notebook-command-worker = "command_queue.worker:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["open_notebook*", "api*", "commands*", "surreal_commands*"]
+include = ["open_notebook*", "api*", "commands*", "command_queue*", "certifi*", "chardet*", "pycountry*", "tqdm*"]
 exclude = ["tests*", "frontend*"]
 
 [tool.setuptools.package-data]
@@ -95,10 +94,38 @@ ignore = [
 ]
 
 [tool.uv]
+# Vält shipped userland is permissive-only. content-core 2.0.4 declares
+# asciidoc 10.2.1 (GPL-2.0-or-later), but does not import it in the extraction
+# paths Open Notebook uses. Exclude only that transitive edge; CI smoke-tests
+# content-core extraction without it so this cannot silently become required.
+exclude-dependencies = [
+    { package = { name = "content-core" }, dependencies = ["asciidoc"] },
+    # Compatibility facades below are first-party MIT code. They preserve the
+    # narrow APIs used by transitive packages without redistributing copyleft
+    # implementations.
+    { package = { name = "podcast-creator" }, dependencies = ["pycountry"] },
+    { package = { name = "httpcore" }, dependencies = ["certifi"] },
+    { package = { name = "httpx" }, dependencies = ["certifi"] },
+    { package = { name = "requests" }, dependencies = ["certifi", "chardet"] },
+    { package = { name = "beautifulsoup4" }, dependencies = ["chardet"] },
+    { package = { name = "readability-lxml" }, dependencies = ["chardet"] },
+    { package = { name = "openai" }, dependencies = ["tqdm"] },
+    { package = { name = "huggingface-hub" }, dependencies = ["tqdm"] },
+    { package = { name = "proglog" }, dependencies = ["tqdm"] },
+]
+
+# imageio-ffmpeg is a permissive Python wrapper, but its binary wheels can
+# contain an FFmpeg executable. Force source installation so Vält never
+# redistributes that binary. Media/podcast features use an operator-supplied
+# ffmpeg/ffprobe installation outside the Vält userland boundary.
+no-binary-package = ["imageio-ffmpeg"]
+
 # Pillow < 12.2.0 has open security advisories (PSD OOB write, FITS
 # decompression bomb, PDF trailer DoS). The only thing holding it back is
 # moviepy's `pillow<12` cap, pulled in via podcast-creator 0.12.0 — and
 # moviepy only touches PIL in its video modules, which the audio-only podcast
 # pipeline never imports. Drop this override once podcast-creator ships a
 # release without moviepy (already removed on its main branch).
-override-dependencies = ["pillow>=12.2.0"]
+# orjson 3.11.6 introduced MPL-covered code; 3.11.5 satisfies current
+# consumers while remaining Apache-2.0 OR MIT.
+override-dependencies = ["pillow>=12.2.0", "orjson==3.11.5"]

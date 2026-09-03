@@ -1,374 +1,146 @@
-# Docker Compose Installation (Recommended)
+# Docker Compose Installation
 
-Multi-container setup with separate services. **Best for most users.**
-
-> **Alternative Registry:** All images are available on both Docker Hub (`lfnovo/open_notebook`) and GitHub Container Registry (`ghcr.io/lfnovo/open-notebook`). Use GHCR if Docker Hub is blocked or you prefer GitHub-native workflows.
+The repository root `docker-compose.yml` is the supported container topology for this branch. It runs PostgreSQL + pgvector as a separate persistent service and the Open Notebook application as a second service.
 
 ## Prerequisites
 
-- **Docker Desktop** installed ([Download](https://www.docker.com/products/docker-desktop/))
-- **5-10 minutes** of your time
-- **API key** for at least one AI provider (OpenAI recommended for beginners)
+- Docker Engine / Docker Desktop with Compose support
+- an AI-provider key, or a reachable local model provider
+- enough persistent disk for PostgreSQL data and user content
 
-## Step 1: Get docker-compose.yml (1 min)
+## 1. Get the repository Compose file
 
-**Option A: Download from repository**
-```bash
-curl -o docker-compose.yml https://raw.githubusercontent.com/lfnovo/open-notebook/main/docker-compose.yml
-```
-
-**Option B: Use the official file from the repo**
-
-The official `docker-compose.yml` is in the root of our repository: [View on GitHub](https://github.com/lfnovo/open-notebook/blob/main/docker-compose.yml)
-
-Copy that file to your project folder.
-
-**Option C: Create manually**
-
-Create a file called `docker-compose.yml` with this content:
-
-```yaml
-services:
-  surrealdb:
-    image: surrealdb/surrealdb:v2
-    # Credentials default to root:root for a zero-config local setup. Before
-    # exposing this instance to a network, set SURREAL_USER / SURREAL_PASSWORD
-    # in a .env file (see .env.example) — they are applied here and to the
-    # open_notebook service below, so the two always stay in sync.
-    # List (exec) form so each interpolated value stays a single argument —
-    # a password containing spaces would otherwise be split into several.
-    command: ["start", "--log", "info", "--user", "${SURREAL_USER:-root}", "--pass", "${SURREAL_PASSWORD:-root}", "rocksdb:/mydata/mydatabase.db"]
-    user: root  # Required for bind mounts on Linux
-    ports:
-      # Bound to localhost only: the open_notebook service reaches this over
-      # the internal compose network regardless, so the host port is purely
-      # for local debugging (e.g. Surrealist, `surreal sql`). Exposing this
-      # on 0.0.0.0 would let anyone who can reach the host connect with the
-      # default root:root credentials.
-      - "127.0.0.1:8000:8000"
-    volumes:
-      - ./surreal_data:/mydata
-    environment:
-      - SURREAL_EXPERIMENTAL_GRAPHQL=true
-    restart: always
-    pull_policy: always
-
-  open_notebook:
-    image: lfnovo/open_notebook:v1-latest
-    ports:
-      - "8502:8502"  # Web UI
-      - "5055:5055"  # REST API
-    environment:
-      # REQUIRED: Change this to your own secret string
-      # This encrypts your API keys in the database
-      - OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
-
-      # Database connection. SURREAL_USER / SURREAL_PASSWORD default to root:root
-      # for local use; override them in a .env file before exposing the instance
-      # (the same values configure the surrealdb service above).
-      - SURREAL_URL=ws://surrealdb:8000/rpc
-      - SURREAL_USER=${SURREAL_USER:-root}
-      - SURREAL_PASSWORD=${SURREAL_PASSWORD:-root}
-      - SURREAL_NAMESPACE=open_notebook
-      - SURREAL_DATABASE=open_notebook
-    volumes:
-      - ./notebook_data:/app/data
-    depends_on:
-      - surrealdb
-    restart: always
-    pull_policy: always
-```
-
-**Edit the file:**
-- Replace `change-me-to-a-secret-string` with your own secret (any string works, e.g., `my-super-secret-key-123`)
-- (Optional) To use database credentials other than the default `root:root`, create a `.env` file next to `docker-compose.yml` with `SURREAL_USER=...` and `SURREAL_PASSWORD=...` — both services pick them up automatically ([.env.example](https://github.com/lfnovo/open-notebook/blob/main/.env.example) shows the full format)
-
----
-
-## Step 2: Start Services (2 min)
-
-Open terminal in the `open-notebook` folder:
+Clone the repository or download the root `docker-compose.yml`. Do not reuse Compose examples from older releases that define the previous database engine.
 
 ```bash
-docker compose up -d
+git clone https://github.com/lfnovo/open-notebook.git
+cd open-notebook
 ```
 
-Wait 15-20 seconds for all services to start:
-```
-✅ surrealdb running on :8000
-✅ open_notebook running on :8502 (UI) and :5055 (API)
+## 2. Configure secrets
+
+Create `.env` beside `docker-compose.yml` and override the development defaults:
+
+```dotenv
+POSTGRES_USER=open_notebook
+POSTGRES_PASSWORD=replace-with-a-strong-database-password
+POSTGRES_DB=open_notebook
+OPEN_NOTEBOOK_ENCRYPTION_KEY=replace-with-a-long-secret
 ```
 
-Check status:
+The Compose file builds the application from the repository and constructs the database DSN internally:
+
+```text
+postgresql://<user>:<password>@postgres:5432/<database>
+```
+
+Both `DATABASE_URL` and `POSTGRES_URL` are set to that PostgreSQL connection string inside the application service.
+
+## 3. Start services
+
+```bash
+docker compose up -d --build
+```
+
+Check health/status:
+
 ```bash
 docker compose ps
+docker compose logs -f postgres
+docker compose logs -f open_notebook
 ```
 
----
+The application waits for PostgreSQL health before normal startup.
 
-## Step 3: Verify Installation (1 min)
+## 4. Access Open Notebook
 
-**API Health:**
-```bash
-curl http://localhost:5055/health
-# Should return: {"status": "healthy"}
-```
+- Web UI: `http://localhost:8502`
+- API: `http://localhost:5055`
+- API docs: `http://localhost:5055/docs`
 
-**Frontend Access:**
-Open browser to:
-```
-http://localhost:8502
-```
+The PostgreSQL port is bound to `127.0.0.1:5432` by the repository Compose file for local administration. Do not expose it directly to untrusted networks.
 
-You should see the Open Notebook interface!
+## 5. Configure AI providers
 
----
+After opening the UI:
 
-## Step 4: Configure AI Provider (2 min)
+1. go to **Settings / API Keys**;
+2. add and save a provider credential;
+3. test the connection;
+4. discover/register the required models.
 
-1. Go to **Settings** → **API Keys**
-2. Click **Add Credential**
-3. Select your provider (e.g., OpenAI, Anthropic, Google)
-4. Give it a name, paste your API key
-5. Click **Save**
-6. Click **Test Connection** — should show success
-7. Click **Discover Models** → **Register Models**
+For fully local inference, configure a separately managed Ollama or compatible provider endpoint.
 
-Your models are now available!
+## Storage
 
-> **Need an API key?** Get one from your chosen provider:
-> - **OpenAI**: https://platform.openai.com/api-keys
-> - **Anthropic**: https://console.anthropic.com/
-> - **Google**: https://aistudio.google.com/
-> - **Groq**: https://console.groq.com/
+The Compose topology uses:
 
----
+- `postgres_data` — PostgreSQL database volume;
+- `./notebook_data:/app/data` — application data/cache files.
 
-## Step 5: First Notebook (2 min)
+Back up both according to the recovery requirements of your installation. PostgreSQL is the authoritative structured store.
 
-1. Click **New Notebook**
-2. Name: "My Research"
-3. Description: "Getting started"
-4. Click **Create**
+## Common operations
 
-Done! You now have a fully working Open Notebook instance.
+Stop application and database containers without deleting data:
 
----
-
-## Configuration
-
-### Adding Ollama (Free Local Models)
-
-Instead of manually editing, use our ready-made example:
-
-```bash
-# Download the Ollama example
-curl -o docker-compose.yml https://raw.githubusercontent.com/lfnovo/open-notebook/main/examples/docker-compose-ollama.yml
-
-# Or copy from repo
-cp examples/docker-compose-ollama.yml docker-compose.yml
-```
-
-See [examples/docker-compose-ollama.yml](../../examples/docker-compose-ollama.yml) for the complete setup.
-
-**Manual setup:** Add this to your existing `docker-compose.yml`:
-
-```yaml
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_models:/root/.ollama
-    restart: always
-
-volumes:
-  ollama_models:
-```
-
-Then restart and pull a model:
-```bash
-docker compose restart
-docker exec open-notebook-local-ollama-1 ollama pull mistral
-```
-
-Configure Ollama in the Settings UI:
-1. Go to **Settings** → **API Keys**
-2. Click **Add Credential** → Select **Ollama**
-3. Enter base URL: `http://ollama:11434`
-4. Click **Save**, then **Test Connection**
-5. Click **Discover Models** → **Register Models**
-
----
-
-## Environment Variables Reference
-
-| Variable | Purpose | Example |
-|----------|---------|---------|
-| `OPEN_NOTEBOOK_ENCRYPTION_KEY` | Encryption key for credentials | `my-secret-key` |
-| `SURREAL_URL` | Database connection | `ws://surrealdb:8000/rpc` |
-| `SURREAL_USER` | Database user | `root` |
-| `SURREAL_PASSWORD` | Database password | `root` |
-| `SURREAL_NAMESPACE` | Database namespace | `open_notebook` |
-| `SURREAL_DATABASE` | Database name | `open_notebook` |
-| `API_URL` | API external URL | `http://localhost:5055` |
-| `OPEN_NOTEBOOK_EMBEDDING_BATCH_SIZE` | Override embedding batch size for stricter/local providers (recommended: `8` for CPU-only local setups) | `50` |
-
-See [Environment Reference](../5-CONFIGURATION/environment-reference.md) for complete list.
-
----
-
-## Common Tasks
-
-### Stop Services
 ```bash
 docker compose down
 ```
 
-### View Logs
-```bash
-# All services
-docker compose logs -f
+Restart:
 
-# Specific service
-docker compose logs -f api
-```
-
-### Restart Services
 ```bash
-docker compose restart
-```
-
-### Update to Latest Version
-```bash
-docker compose down
-docker compose pull
 docker compose up -d
 ```
 
-### Remove All Data
+Rebuild the application image after source changes:
+
+```bash
+docker compose up -d --build open_notebook
+```
+
+View logs:
+
+```bash
+docker compose logs -f open_notebook
+docker compose logs -f postgres
+```
+
+Destroy containers **and the named PostgreSQL volume**:
+
 ```bash
 docker compose down -v
 ```
 
----
+The last command deletes database data and is not a routine reset mechanism.
 
-## Troubleshooting
+## Database troubleshooting
 
-### "Cannot connect to API" Error
-
-1. Check if Docker is running:
-```bash
-docker ps
-```
-
-2. Check if services are running:
-```bash
-docker compose ps
-```
-
-3. Check API logs:
-```bash
-docker compose logs api
-```
-
-4. Wait longer - services can take 20-30 seconds to start on first run
-
----
-
-### Port Already in Use
-
-If you get "Port 8502 already in use", change the port:
-
-```yaml
-ports:
-  - "8503:8502"  # Use 8503 instead
-  - "5055:5055"  # Keep API port same
-```
-
-Then access at `http://localhost:8503`
-
----
-
-### Credential Issues
-
-1. Go to **Settings** → **API Keys**
-2. Click **Test Connection** on the credential
-3. If it fails, verify key at provider's website
-4. Check you have credits in your account
-5. Delete and re-create the credential if needed
-
----
-
-### Database Connection Issues
-
-Check SurrealDB is running:
-```bash
-docker compose logs surrealdb
-```
-
-Reset database:
-```bash
-docker compose down -v
-docker compose up -d
-```
-
-### Database Permission Denied (Linux)
-
-If you see `Permission denied` or `Failed to create RocksDB directory` in SurrealDB logs:
+Check PostgreSQL health:
 
 ```bash
-docker compose logs surrealdb | grep -i permission
+docker compose exec postgres \
+  pg_isready -U "${POSTGRES_USER:-open_notebook}" -d "${POSTGRES_DB:-open_notebook}"
 ```
 
-This happens because SurrealDB runs as a non-root user but Docker creates bind mount directories as root. Add `user: root` to the surrealdb service:
+Check that pgvector exists:
 
-```yaml
-surrealdb:
-  image: surrealdb/surrealdb:v2
-  user: root  # Fix for Linux bind mount permissions
-  # ... rest of config
-```
-
-Then restart:
 ```bash
-docker compose down -v
-docker compose up -d
+docker compose exec postgres \
+  psql -U "${POSTGRES_USER:-open_notebook}" -d "${POSTGRES_DB:-open_notebook}" \
+  -c 'SELECT extname, extversion FROM pg_extension WHERE extname = '\''vector'\'';'
 ```
 
----
+If the extension is absent, ensure the database image/package includes pgvector and restart application initialization after installing it.
 
-## Alternative Setups
+## Existing installations using the previous database
 
-Looking for different configurations? Check out our [examples/](../../examples/) folder:
+Do not point a PostgreSQL runtime at the old data directory. Start a fresh PostgreSQL target and run the one-time migration utility while the old database is still reachable. See [Local Development Setup](../7-DEVELOPMENT/development-setup.md#one-time-migration-from-a-legacy-data-store).
 
-- **[Ollama Setup](../../examples/docker-compose-ollama.yml)** - Run local AI models (free, private)
-- **[Single Container](../../examples/docker-compose-single.yml)** - All-in-one container (deprecated, will be removed in v2)
-- **[Development](../../examples/docker-compose-dev.yml)** - For contributors and developers
+## Related documentation
 
-Each example includes detailed comments and usage instructions.
-
----
-
-## Next Steps
-
-1. **Add Content**: Sources, notebooks, documents
-2. **Configure Models**: Settings → Models (choose your preferences)
-3. **Explore Features**: Chat, search, transformations
-4. **Read Guide**: [User Guide](../3-USER-GUIDE/index.md)
-
----
-
-## Production Deployment
-
-For production use, see:
-- [Security Hardening](../5-CONFIGURATION/security.md)
-- [Reverse Proxy](../5-CONFIGURATION/reverse-proxy.md)
-
----
-
-## Getting Help
-
-- **Discord**: [Community support](https://discord.gg/37XJPXfz2w)
-- **Issues**: [GitHub Issues](https://github.com/lfnovo/open-notebook/issues)
-- **Docs**: [Full documentation](../index.md)
+- [Installation overview](index.md)
+- [Environment reference](../5-CONFIGURATION/environment-reference.md)
+- [Architecture](../7-DEVELOPMENT/architecture.md)
+- [Security hardening](../5-CONFIGURATION/security.md)

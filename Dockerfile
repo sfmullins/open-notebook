@@ -3,7 +3,7 @@
 # server. Native installation remains the primary deployment path.
 
 # Stage 1: Frontend builder
-FROM node:22-slim AS frontend-builder
+FROM node:22.23.2-slim AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
@@ -19,14 +19,15 @@ RUN i=0; until npm ci; do \
     done
 
 COPY frontend/ ./
-RUN npm run build
+RUN npm run build \
+ && rm -rf .next/standalone/node_modules/sharp .next/standalone/node_modules/@img
 
 # Stage 2: Backend builder
-FROM python:3.12-slim-trixie AS backend-builder
+FROM python:3.12.14-slim-trixie AS backend-builder
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /uvx /bin/
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -35,7 +36,17 @@ ENV UV_LINK_MODE=copy
 ENV UV_HTTP_TIMEOUT=120
 COPY pyproject.toml uv.lock ./
 COPY open_notebook/__init__.py ./open_notebook/__init__.py
-RUN uv sync --frozen --no-dev
+# The permissive compatibility facades are part of the first-party package and
+# must exist before uv builds the editable application. The tiktoken cache step
+# below imports requests, which imports the certifi facade.
+COPY certifi ./certifi
+COPY chardet ./chardet
+COPY pycountry ./pycountry
+COPY tqdm ./tqdm
+RUN uv sync --frozen --no-dev \
+ && rm -rf .venv/lib/python*/site-packages/nodejs_wheel/lib/node_modules/npm \
+ && rm -f .venv/lib/python*/site-packages/nodejs_wheel/bin/npm* \
+          .venv/lib/python*/site-packages/nodejs_wheel/bin/npx*
 
 ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
 RUN mkdir -p /app/tiktoken-cache && \
@@ -43,15 +54,16 @@ RUN mkdir -p /app/tiktoken-cache && \
 
 # Stage 3: Application runtime. The database is always PostgreSQL + pgvector
 # supplied externally (native system service or a separate container).
-FROM python:3.12-slim-trixie AS runtime
+FROM python:3.12.14-slim-trixie AS runtime
+# FFmpeg is deliberately NOT installed in this image. Vält does not redistribute
+# the FFmpeg executable; operators who enable media/podcast features provide it
+# externally. Node is copied from the pinned frontend stage instead of using a
+# mutable remote installation script.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
-    ffmpeg \
     supervisor \
-    curl \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /uvx /bin/
 WORKDIR /app
 COPY --from=backend-builder /app/.venv /app/.venv
 COPY . /app
@@ -60,22 +72,21 @@ COPY --from=frontend-builder /app/frontend/.next/standalone /app/frontend/
 COPY --from=frontend-builder /app/frontend/.next/static /app/frontend/.next/static
 COPY --from=frontend-builder /app/frontend/public /app/frontend/public
 COPY --from=frontend-builder /app/frontend/start-server.js /app/frontend/start-server.js
-
-ENV UV_NO_SYNC=1
-ENV VIRTUAL_ENV=/app/.venv
-ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
-ENV API_HOST=0.0.0.0
-ENV UV_CACHE_DIR=/app/data/.cache/uv
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/data/.cache/playwright
-ENV HF_HOME=/app/data/.cache/huggingface
-
 RUN mkdir -p /app/data /var/log/supervisor \
     && chmod +x /app/scripts/wait-for-api.sh /app/scripts/docker-entrypoint.sh
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
+ENV PATH="/app/.venv/bin:$PATH"
+ENV DATA_FOLDER=/app/data
+ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
+ENV API_HOST=0.0.0.0
+ENV FRONTEND_BIND_HOST=0.0.0.0
+ENV PORT=8502
+ENV INTERNAL_API_URL=http://localhost:5055
+
 EXPOSE 8502 5055
 
-# DATABASE_URL (or POSTGRES_URL) must point to a PostgreSQL instance with the
-# pgvector extension available. See docs/7-DEVELOPMENT/dockerless-postgresql.md.
+VOLUME ["/app/data"]
+
 ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

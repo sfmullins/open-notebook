@@ -13,7 +13,7 @@ from api.routers._chat_shared import (
     extract_chat_messages,
     get_session_or_404,
 )
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repository import repo_relations
 from open_notebook.domain.notebook import ChatSession, Notebook
 from open_notebook.exceptions import (
     NotFoundError,
@@ -199,10 +199,7 @@ async def get_session(session_id: str):
             messages = extract_chat_messages(thread_state.values["messages"])
 
         # Find notebook_id (we need to query the relationship)
-        notebook_query = await repo_query(
-            "SELECT out FROM refers_to WHERE in = $session_id",
-            {"session_id": ensure_record_id(full_session_id)},
-        )
+        notebook_query = await repo_relations("refers_to", source=full_session_id)
 
         notebook_id = notebook_query[0]["out"] if notebook_query else None
 
@@ -251,10 +248,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
         await session.save()
 
         # Find notebook_id
-        notebook_query = await repo_query(
-            "SELECT out FROM refers_to WHERE in = $session_id",
-            {"session_id": ensure_record_id(full_session_id)},
-        )
+        notebook_query = await repo_relations("refers_to", source=full_session_id)
         notebook_id = notebook_query[0]["out"] if notebook_query else None
 
         # Get message count from LangGraph state
@@ -309,10 +303,7 @@ async def execute_chat(request: ExecuteChatRequest):
         full_session_id, session = await get_session_or_404(request.session_id)
 
         # Fetch notebook linked to this session
-        notebook_query = await repo_query(
-            "SELECT out FROM refers_to WHERE in = $session_id",
-            {"session_id": ensure_record_id(full_session_id)},
-        )
+        notebook_query = await repo_relations("refers_to", source=full_session_id)
         notebook = None
         if notebook_query:
             notebook = await Notebook.get(notebook_query[0]["out"])

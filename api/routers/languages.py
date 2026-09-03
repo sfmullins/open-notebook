@@ -1,10 +1,11 @@
 from typing import List
 
-import pycountry
 from babel import Locale
 from babel.core import get_global
 from fastapi import APIRouter
 from pydantic import BaseModel
+
+import pycountry
 
 router = APIRouter()
 
@@ -43,10 +44,9 @@ async def list_languages():
 
     # 1. For each language, resolve its default locale via CLDR likely subtags
     for lang in pycountry.languages:
-        if not hasattr(lang, "alpha_2"):
-            continue
-
         code = lang.alpha_2
+        if not code:
+            continue
         likely = likely_subtags.get(code)
 
         if likely:

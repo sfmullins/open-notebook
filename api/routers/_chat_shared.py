@@ -17,7 +17,7 @@ from typing import Any, Iterable, List, Optional, Tuple
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repository import repo_relation_exists
 from open_notebook.domain.notebook import ChatSession, Source
 
 
@@ -66,12 +66,8 @@ async def get_verified_source_session(
     full_source_id, source = await get_source_or_404(source_id)
     full_session_id, session = await get_session_or_404(session_id)
 
-    relation_query = await repo_query(
-        "SELECT * FROM refers_to WHERE in = $session_id AND out = $source_id",
-        {
-            "session_id": ensure_record_id(full_session_id),
-            "source_id": ensure_record_id(full_source_id),
-        },
+    relation_query = await repo_relation_exists(
+        "refers_to", source=full_session_id, target=full_source_id
     )
     if not relation_query:
         raise HTTPException(status_code=404, detail="Session not found for this source")

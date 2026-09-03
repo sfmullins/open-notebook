@@ -12,13 +12,24 @@ from typing import (
 
 from loguru import logger
 
+from command_queue import CommandInput, CommandOutput, command, submit_command
 from open_notebook.ai.models import model_manager
-from open_notebook.database.repository import ensure_record_id, repo_insert, repo_query
+from open_notebook.database.embeddings import (
+    delete_source_embeddings,
+    record_ids_with_embeddings,
+    source_ids_with_embeddings,
+    upsert_record_embedding,
+)
+from open_notebook.database.repository import (
+    ensure_record_id,
+    repo_create,
+    repo_insert,
+    repo_list,
+)
 from open_notebook.domain.notebook import Note, Source, SourceInsight
 from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
 from open_notebook.utils.embedding import generate_embedding, generate_embeddings
-from surreal_commands import CommandInput, CommandOutput, command, submit_command
 
 # NOTE: `stop_on` below can never trigger in practice — each command catches
 # ValueError internally and returns success=False instead of raising, so the
@@ -88,7 +99,7 @@ async def _embed_record(
         logger.error(f"Failed to embed {kind} {record_id} (command: {cmd_id}): {e}")
         return None, processing_time, str(e)
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - will be retried (PostgreSQL command queue logs final failure)
         cmd_id = get_command_id(input_data)
         logger.debug(
             f"Transient error embedding {kind} {record_id} (command: {cmd_id}): {e}"
@@ -122,13 +133,9 @@ async def _embed_markdown_record(
         record.content, content_type=ContentType.MARKDOWN, command_id=cmd_id
     )
 
-    # 3. UPSERT embedding into the record
-    await repo_query(
-        "UPDATE $record_id SET embedding = $embedding",
-        {
-            "record_id": ensure_record_id(record_id),
-            "embedding": embedding,
-        },
+    # 3. Store the embedding in the dedicated pgvector table.
+    await upsert_record_embedding(
+        ensure_record_id(record_id), record.content, embedding
     )
 
     return {}, ""
@@ -333,10 +340,7 @@ async def embed_source_command(input_data: EmbedSourceInput) -> EmbedSourceOutpu
 
         # 2. DELETE existing embeddings (idempotency)
         logger.debug(f"Deleting existing embeddings for source {input_data.source_id}")
-        await repo_query(
-            "DELETE source_embedding WHERE source = $source_id",
-            {"source_id": ensure_record_id(input_data.source_id)},
-        )
+        await delete_source_embeddings(ensure_record_id(input_data.source_id))
 
         # 3. Detect content type from file path if available
         file_path = source.asset.file_path if source.asset else None
@@ -411,7 +415,7 @@ async def create_insight_command(
     Create a source insight with automatic retry on transaction conflicts.
 
     This command wraps the CREATE source_insight operation with retry logic
-    to handle SurrealDB transaction conflicts that occur during batch imports
+    to handle database transaction conflicts that occur during batch imports
     when multiple parallel transformations try to create insights concurrently.
 
     Flow:
@@ -433,25 +437,15 @@ async def create_insight_command(
         )
 
         # 1. Create insight record in database
-        result = await repo_query(
-            """
-            CREATE source_insight CONTENT {
-                "source": $source_id,
-                "insight_type": $insight_type,
-                "content": $content
-            };
-            """,
+        result = await repo_create(
+            "source_insight",
             {
-                "source_id": ensure_record_id(input_data.source_id),
+                "source": input_data.source_id,
                 "insight_type": input_data.insight_type,
                 "content": input_data.content,
             },
         )
-
-        if not result or len(result) == 0:
-            raise ValueError("Failed to create insight - no result returned")
-
-        insight_id = str(result[0].get("id", ""))
+        insight_id = str(result.get("id", ""))
         if not insight_id:
             raise ValueError("Failed to create insight - no ID in result")
 
@@ -489,7 +483,7 @@ async def create_insight_command(
             error_message=str(e),
         )
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - will be retried (PostgreSQL command queue logs final failure)
         cmd_id = get_command_id(input_data)
         logger.debug(
             f"Transient error creating insight for source {input_data.source_id} "
@@ -515,39 +509,24 @@ async def collect_items_for_rebuild(
     if include_sources:
         if mode == "existing":
             # Query sources with embeddings (via source_embedding table)
-            result = await repo_query(
-                """
-                RETURN array::distinct(
-                    SELECT VALUE source.id
-                    FROM source_embedding
-                    WHERE embedding != none AND array::len(embedding) > 0
-                )
-                """
-            )
-            # RETURN returns the array directly as the result (not nested)
-            if result:
-                items["sources"] = [str(item) for item in result]
-            else:
-                items["sources"] = []
+            items["sources"] = await source_ids_with_embeddings()
         else:  # mode == "all"
             # Query all sources with non-empty content
-            result = await repo_query(
-                "SELECT id FROM source WHERE full_text != none AND string::trim(full_text) != ''"
+            result = await repo_list(
+                "source", non_null_fields={"full_text"}, non_empty_fields={"full_text"}
             )
-            items["sources"] = [str(item["id"]) for item in result] if result else []
+            items["sources"] = [str(item["id"]) for item in result]
 
         logger.info(f"Collected {len(items['sources'])} sources for rebuild")
 
     if include_notes:
         if mode == "existing":
             # Query notes with embeddings
-            result = await repo_query(
-                "SELECT id FROM note WHERE embedding != none AND array::len(embedding) > 0"
-            )
+            result = [{"id": rid} for rid in await record_ids_with_embeddings("note")]
         else:  # mode == "all"
             # Query all notes with non-empty content
-            result = await repo_query(
-                "SELECT id FROM note WHERE content != none AND string::trim(content) != ''"
+            result = await repo_list(
+                "note", non_null_fields={"content"}, non_empty_fields={"content"}
             )
 
         items["notes"] = [str(item["id"]) for item in result] if result else []
@@ -556,13 +535,16 @@ async def collect_items_for_rebuild(
     if include_insights:
         if mode == "existing":
             # Query insights with embeddings
-            result = await repo_query(
-                "SELECT id FROM source_insight WHERE embedding != none AND array::len(embedding) > 0"
-            )
+            result = [
+                {"id": rid}
+                for rid in await record_ids_with_embeddings("source_insight")
+            ]
         else:  # mode == "all"
             # Query all insights with non-empty content
-            result = await repo_query(
-                "SELECT id FROM source_insight WHERE content != none AND string::trim(content) != ''"
+            result = await repo_list(
+                "source_insight",
+                non_null_fields={"content"},
+                non_empty_fields={"content"},
             )
 
         items["insights"] = [str(item["id"]) for item in result] if result else []

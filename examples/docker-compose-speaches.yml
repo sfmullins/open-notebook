@@ -5,7 +5,7 @@
 
 services:
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:0.8.6-pg17-bookworm
     environment:
       POSTGRES_USER: open_notebook
       POSTGRES_PASSWORD: open_notebook
@@ -22,14 +22,14 @@ services:
     restart: unless-stopped
 
   speaches:
-    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    image: ghcr.io/speaches-ai/speaches:0.8.3-cpu
     container_name: speaches
     ports:
       - "8969:8000"
     volumes:
       - hf-hub-cache:/home/ubuntu/.cache/huggingface/hub
     restart: unless-stopped
-    # For GPU acceleration use ghcr.io/speaches-ai/speaches:latest-cuda
+    # For GPU acceleration use ghcr.io/speaches-ai/speaches:0.8.3-cuda
     # and add the appropriate GPU device mapping.
 
   open_notebook:

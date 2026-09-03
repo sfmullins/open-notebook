@@ -28,7 +28,7 @@ def client():
 class TestSourcesRouterDoesNotLeakExceptionText:
     def test_list_sources_failure_returns_generic_message(self, client):
         with patch(
-            "api.routers.sources.repo_query",
+            "api.routers.sources.repo_list",
             new=AsyncMock(side_effect=RuntimeError(SECRET)),
         ):
             response = client.get("/api/sources")
@@ -97,9 +97,7 @@ class TestInvalidInputErrorsStillReturnTheirOwnSafeMessage:
         with patch(
             "api.routers.sources.Source.get", new=AsyncMock(return_value=mock_source)
         ):
-            response = client.put(
-                "/api/sources/source:abc123", json={"title": "x"}
-            )
+            response = client.put("/api/sources/source:abc123", json={"title": "x"})
 
         assert response.status_code == 400
         assert response.json()["detail"] == "Title cannot be empty"

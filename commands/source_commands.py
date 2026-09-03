@@ -4,11 +4,11 @@ from typing import Any, Dict, List, Optional
 from langchain_core.runnables import RunnableConfig
 from loguru import logger
 
+from command_queue import CommandInput, CommandOutput, command
 from open_notebook.database.repository import ensure_record_id
 from open_notebook.domain.notebook import Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import ConfigurationError
-from surreal_commands import CommandInput, CommandOutput, command
 
 try:
     from open_notebook.graphs.source import source_graph
@@ -39,12 +39,15 @@ class SourceProcessingOutput(CommandOutput):
     "process_source",
     app="open_notebook",
     retry={
-        "max_attempts": 15,  # Handle deep queues (workaround for SurrealDB v2 transaction conflicts)
+        "max_attempts": 15,  # Handle deep queues and transient database contention
         "wait_strategy": "exponential_jitter",
         "wait_min": 1,
         "wait_max": 120,  # Allow queue to drain
-        "stop_on": [ValueError, ConfigurationError],  # Don't retry validation/config errors
-        "retry_log_level": "debug",  # Avoid log noise during transaction conflicts
+        "stop_on": [
+            ValueError,
+            ConfigurationError,
+        ],  # Don't retry validation/config errors
+        "retry_log_level": "debug",  # Avoid log noise during transient contention
     },
 )
 async def process_source_command(
@@ -117,9 +120,7 @@ async def process_source_command(
         logger.info(
             f"Successfully processed source: {processed_source.id} in {processing_time:.2f}s"
         )
-        logger.info(
-            f"Created {insights_created} insights, embedding {embed_status}"
-        )
+        logger.info(f"Created {insights_created} insights, embedding {embed_status}")
 
         return SourceProcessingOutput(
             success=True,
@@ -130,7 +131,7 @@ async def process_source_command(
         )
 
     except ValueError as e:
-        # Validation errors are permanent failures. Re-raise so surreal-commands
+        # Validation errors are permanent failures. Re-raise so PostgreSQL command queue
         # marks the job as `failed` (stop_on=[ValueError] already prevents
         # pointless retries). Returning a success=False result instead marks the
         # job `completed` (is_success() checks job status, not the payload),
@@ -139,10 +140,8 @@ async def process_source_command(
         logger.error(f"Source processing failed (permanent): {e}")
         raise
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
-        logger.debug(
-            f"Transient error processing source {input_data.source_id}: {e}"
-        )
+        # Transient failure - will be retried (PostgreSQL command queue logs final failure)
+        logger.debug(f"Transient error processing source {input_data.source_id}: {e}")
         raise
 
 
@@ -176,7 +175,10 @@ class RunTransformationOutput(CommandOutput):
         "wait_strategy": "exponential_jitter",
         "wait_min": 1,
         "wait_max": 60,
-        "stop_on": [ValueError, ConfigurationError],  # Don't retry validation/config errors
+        "stop_on": [
+            ValueError,
+            ConfigurationError,
+        ],  # Don't retry validation/config errors
         "retry_log_level": "debug",
     },
 )
@@ -255,7 +257,7 @@ async def run_transformation_command(
             error_message=str(e),
         )
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - will be retried (PostgreSQL command queue logs final failure)
         logger.debug(
             f"Transient error running transformation {input_data.transformation_id} "
             f"on source {input_data.source_id}: {e}"

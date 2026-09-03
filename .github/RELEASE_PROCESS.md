@@ -167,11 +167,8 @@ accepted improvements immediately — update this document, the scripts under
   `rc-stack.sh` sets it; remember this for any custom setup.
 - **Containerized app + host services**: credentials pointing at local
   services (Ollama, LM Studio) need `http://host.docker.internal:<port>`.
-- **SurrealDB import**: `OVERWRITE` goes after the type keyword
-  (`DEFINE FIELD OVERWRITE …`), and the exporter can leak a log line into the
-  dump — `rc-stack.sh` handles both.
-- **Multiple local SurrealDB instances**: check which one the dev `.env`
-  actually points at (`SURREAL_URL`) before exporting data.
+- **Legacy database migration** is tested separately from normal release boot. PostgreSQL/pgvector is the only runtime database; use `scripts/migrate_surreal_to_postgres.py` only when validating an import from a pre-PostgreSQL installation.
+- **Release-candidate data copies** must identify PostgreSQL from `DATABASE_URL` rather than from whichever local database process happens to be running.
 - **Dev-machine ports may belong to other projects**: check who owns
   3000/5055/8000 (`lsof -nP -iTCP:<port> -sTCP:LISTEN` + the process cwd)
   before starting or killing anything. The frontend runs fine on an alternate

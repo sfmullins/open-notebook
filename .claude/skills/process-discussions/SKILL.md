@@ -89,7 +89,7 @@ recorded). Re-replying to handled threads is noise, not facilitation.
    found two real bugs during calibration (editor hardcoded to light mode;
    Crawl4AI client sending no auth header). For upstream libraries use the
    local checkouts from `CLAUDE.local.md` (esperanto, content-core,
-   podcast-creator, surreal-commands). State in the reply what was
+   podcast-creator, PostgreSQL command queue). State in the reply what was
    *verified*, distinctly from what is opinion.
 
 5. **Check vision/decision alignment** against public records. PDR-001

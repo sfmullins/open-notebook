@@ -1,7 +1,6 @@
-"""PostgreSQL-backed compatibility layer for the former ``surreal-commands`` API.
+"""PostgreSQL-backed durable command queue for Open Notebook.
 
-Keeping the import surface stable avoids coupling command/domain code to the queue
-backend while removing SurrealDB from the runtime. Jobs are durable, claimed with
+The queue is independent of the application domain and uses PostgreSQL for durable jobs. Jobs are durable, claimed with
 ``FOR UPDATE SKIP LOCKED`` and protected by renewable leases so a crashed worker can
 be recovered without duplicating healthy long-running work.
 """
@@ -16,17 +15,16 @@ import socket
 import threading
 from contextlib import suppress
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Dict, Optional, Type
+from typing import Any, Awaitable, Callable, Coroutine, Dict, Optional, Type
 from uuid import UUID, uuid4
 
-import psycopg
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
 from open_notebook.database.postgres import (
+    close_pool,
     db_connection,
     ensure_schema,
-    get_database_url,
     normalize_json,
 )
 
@@ -69,44 +67,45 @@ class _RegisteredCommand:
 
 
 _REGISTRY: dict[tuple[str, str], _RegisteredCommand] = {}
-_SCHEMA_LOCK = threading.Lock()
-_SCHEMA_READY_SYNC = False
+def _run_async_submission(factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
+    """Run an async submission from either sync or async-hosted call sites.
 
+    Legacy domain APIs still expose a synchronous ``submit_command`` helper.
+    When called inside a running event loop, execute the short database bridge
+    in a dedicated thread rather than nesting event loops in the caller thread.
+    """
 
-def _queue_schema_sync() -> None:
-    global _SCHEMA_READY_SYNC
-    if _SCHEMA_READY_SYNC:
-        return
-    with _SCHEMA_LOCK:
-        if _SCHEMA_READY_SYNC:
-            return
-        with psycopg.connect(get_database_url(), autocommit=True) as connection:
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS command_job (
-                    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-                    app text NOT NULL,
-                    command_name text NOT NULL,
-                    input jsonb NOT NULL,
-                    status text NOT NULL DEFAULT 'queued'
-                        CHECK (status IN ('queued','running','completed','failed')),
-                    attempt integer NOT NULL DEFAULT 0,
-                    max_attempts integer NOT NULL DEFAULT 1,
-                    run_after timestamptz NOT NULL DEFAULT now(),
-                    lease_until timestamptz,
-                    worker_id text,
-                    result jsonb,
-                    error_message text,
-                    created timestamptz NOT NULL DEFAULT now(),
-                    updated timestamptz NOT NULL DEFAULT now()
-                )
-                """
-            )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS command_job_claim_idx "
-                "ON command_job(status, run_after, lease_until, created)"
-            )
-        _SCHEMA_READY_SYNC = True
+    async def run_once() -> str:
+        try:
+            return await factory()
+        finally:
+            # This helper owns its short-lived event loop, so drain the pool while
+            # that loop is still alive instead of leaving loop-bound transports
+            # for a later caller to discover after loop closure.
+            await close_pool()
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(run_once())
+
+    result: list[str] = []
+    errors: list[BaseException] = []
+
+    def runner() -> None:
+        try:
+            result.append(asyncio.run(run_once()))
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=runner, name="open-notebook-command-submit")
+    thread.start()
+    thread.join()
+    if errors:
+        raise errors[0]
+    if not result:
+        raise RuntimeError("Command submission thread returned no result")
+    return result[0]
 
 
 def command(
@@ -142,25 +141,10 @@ def _max_attempts_for(app: str, name: str) -> int:
 
 
 def submit_command(app: str, command_name: str, input_data: Dict[str, Any]) -> str:
-    """Durably enqueue a command and return its stable ``command:<uuid>`` ID."""
-    _queue_schema_sync()
-    command_id = uuid4()
-    payload = normalize_json(input_data)
-    with psycopg.connect(get_database_url(), autocommit=True) as connection:
-        connection.execute(
-            """
-            INSERT INTO command_job(id, app, command_name, input, max_attempts)
-            VALUES (%s, %s, %s, %s::jsonb, %s)
-            """,
-            (
-                command_id,
-                app,
-                command_name,
-                json.dumps(payload),
-                _max_attempts_for(app, command_name),
-            ),
-        )
-    return f"command:{command_id}"
+    """Durably enqueue a command from a synchronous compatibility call site."""
+    return _run_async_submission(
+        lambda: submit_command_async(app, command_name, input_data)
+    )
 
 
 async def submit_command_async(
@@ -551,9 +535,12 @@ def execute_command_sync(
     command_id = submit_command(app, command_name, input_data)
 
     async def execute() -> CommandStatus:
-        if timeout is None:
-            return await _execute_specific(command_id)
-        return await asyncio.wait_for(_execute_specific(command_id), timeout=timeout)
+        try:
+            if timeout is None:
+                return await _execute_specific(command_id)
+            return await asyncio.wait_for(_execute_specific(command_id), timeout=timeout)
+        finally:
+            await close_pool()
 
     return asyncio.run(execute())
 

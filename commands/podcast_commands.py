@@ -5,8 +5,9 @@ from typing import Optional
 
 from loguru import logger
 
+from command_queue import CommandInput, CommandOutput, command
 from open_notebook.config import PODCASTS_FOLDER
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repository import ensure_record_id, repo_list
 from open_notebook.podcasts.audio_paths import to_relative_audio_path
 from open_notebook.podcasts.models import (
     EpisodeProfile,
@@ -15,16 +16,30 @@ from open_notebook.podcasts.models import (
     _resolve_model_config,
 )
 from open_notebook.utils.model_utils import full_model_dump
-from surreal_commands import CommandInput, CommandOutput, command
-
-try:
-    from podcast_creator import configure, create_podcast
-except ImportError as e:
-    logger.error(f"Failed to import podcast_creator: {e}")
-    raise ValueError("podcast_creator library not available")
 
 
-def build_episode_output_dir(podcasts_folder: str = PODCASTS_FOLDER) -> tuple[str, Path]:
+def _load_podcast_creator():
+    """Load podcast_creator only when podcast generation is requested.
+
+    moviepy/imageio-ffmpeg resolves FFmpeg during import. FFmpeg is deliberately
+    external to the Vält redistributed userland, so normal API/worker startup
+    must not require it. Operators enabling podcast generation provide ffmpeg
+    and may set IMAGEIO_FFMPEG_EXE to its absolute path.
+    """
+    try:
+        from podcast_creator import configure, create_podcast
+    except (ImportError, RuntimeError) as exc:
+        raise RuntimeError(
+            "Podcast generation requires the optional podcast runtime and an "
+            "externally installed FFmpeg executable. Install FFmpeg outside the "
+            "Vält userland boundary and set IMAGEIO_FFMPEG_EXE if it is not on PATH."
+        ) from exc
+    return configure, create_podcast
+
+
+def build_episode_output_dir(
+    podcasts_folder: str = PODCASTS_FOLDER,
+) -> tuple[str, Path]:
     """Build a filesystem-safe output directory path for a podcast episode.
 
     Uses a UUID as the directory name so the path is safe regardless of
@@ -72,12 +87,13 @@ async def generate_podcast_command(
     start_time = time.time()
 
     try:
+        configure, create_podcast = _load_podcast_creator()
         logger.info(
             f"Starting podcast generation for episode: {input_data.episode_name}"
         )
         logger.info(f"Using episode profile: {input_data.episode_profile}")
 
-        # 1. Load Episode and Speaker profiles from SurrealDB
+        # 1. Load Episode and Speaker profiles from PostgreSQL
         episode_profile = await EpisodeProfile.get_by_name(input_data.episode_profile)
         if not episode_profile:
             raise ValueError(
@@ -126,15 +142,21 @@ async def generate_podcast_command(
             )
 
         # 3. Resolve model configs with credentials
-        outline_provider, outline_model_name, outline_config = (
-            await episode_profile.resolve_outline_config()
-        )
-        transcript_provider, transcript_model_name, transcript_config = (
-            await episode_profile.resolve_transcript_config()
-        )
-        tts_provider, tts_model_name, tts_config = (
-            await speaker_profile.resolve_tts_config()
-        )
+        (
+            outline_provider,
+            outline_model_name,
+            outline_config,
+        ) = await episode_profile.resolve_outline_config()
+        (
+            transcript_provider,
+            transcript_model_name,
+            transcript_config,
+        ) = await episode_profile.resolve_transcript_config()
+        (
+            tts_provider,
+            tts_model_name,
+            tts_config,
+        ) = await speaker_profile.resolve_tts_config()
 
         logger.info(
             f"Resolved models - outline: {outline_provider}/{outline_model_name}, "
@@ -143,8 +165,8 @@ async def generate_podcast_command(
         )
 
         # 4. Load all profiles and configure podcast-creator
-        episode_profiles = await repo_query("SELECT * FROM episode_profile")
-        speaker_profiles = await repo_query("SELECT * FROM speaker_profile")
+        episode_profiles = await repo_list("episode_profile")
+        speaker_profiles = await repo_list("speaker_profile")
 
         # Transform the surrealdb array into a dictionary for podcast-creator
         episode_profiles_dict = {

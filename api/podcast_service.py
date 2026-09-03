@@ -4,9 +4,9 @@ from fastapi import HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
+from command_queue import get_command_status, submit_command
 from open_notebook.domain.notebook import Notebook
 from open_notebook.podcasts.models import EpisodeProfile, PodcastEpisode, SpeakerProfile
-from surreal_commands import get_command_status, submit_command
 
 
 class PodcastGenerationRequest(BaseModel):
@@ -93,7 +93,7 @@ class PodcastService:
                 logger.error(f"Failed to import podcast commands: {import_err}")
                 raise ValueError("Podcast commands not available")
 
-            # Submit command to surreal-commands
+            # Submit command to PostgreSQL command queue
             job_id = submit_command("open_notebook", "generate_podcast", command_args)
 
             # Convert RecordID to string if needed

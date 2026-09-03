@@ -11,7 +11,14 @@ from api.models import (
     NotebookUpdate,
     RecentlyViewedResponse,
 )
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repository import (
+    repo_delete_relations,
+    repo_list,
+    repo_relate,
+    repo_relation_count,
+    repo_relation_exists,
+    repo_update_record,
+)
 from open_notebook.domain.notebook import Notebook, Source
 from open_notebook.exceptions import (
     InvalidInputError,
@@ -27,12 +34,11 @@ def _last_viewed_sort_key(item: RecentlyViewedResponse) -> str:
 
 
 async def _stamp_notebook_view(notebook_id: str) -> None:
-    # Best-effort write-on-read: recording the view timestamp must never turn a
-    # successful read into a 500. Log and move on if the stamp update fails.
     try:
-        await repo_query(
-            "UPDATE $notebook_id SET last_viewed_at = time::now();",
-            {"notebook_id": ensure_record_id(notebook_id)},
+        from datetime import datetime, timezone
+
+        await repo_update_record(
+            notebook_id, {"last_viewed_at": datetime.now(timezone.utc)}
         )
     except Exception as e:
         logger.warning(
@@ -63,61 +69,37 @@ async def get_notebooks(
     archived: Optional[bool] = Query(None, description="Filter by archived status"),
     order_by: str = Query("updated desc", description="Order by field and direction"),
 ):
-    """Get all notebooks with optional filtering and ordering."""
     try:
-        # Validate order_by against allowlist to prevent SurrealQL injection
         allowed_fields = {"name", "created", "updated"}
-        allowed_directions = {"asc", "desc"}
-
         parts = order_by.strip().lower().split()
-        if len(parts) == 1:
-            if parts[0] not in allowed_fields:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid order_by field: '{order_by}'. Allowed fields: {', '.join(sorted(allowed_fields))}",
+        if (
+            not (1 <= len(parts) <= 2)
+            or parts[0] not in allowed_fields
+            or (len(parts) == 2 and parts[1] not in {"asc", "desc"})
+        ):
+            raise HTTPException(status_code=400, detail="Invalid order_by")
+        field = parts[0]
+        descending = len(parts) == 2 and parts[1] == "desc"
+        filters = {"archived": archived} if archived is not None else None
+        rows = await repo_list(
+            "notebook", filters=filters, order_by=field, descending=descending
+        )
+        responses = []
+        for nb in rows:
+            nb_id = str(nb.get("id", ""))
+            responses.append(
+                NotebookResponse(
+                    id=nb_id,
+                    name=nb.get("name", ""),
+                    description=nb.get("description", ""),
+                    archived=nb.get("archived", False),
+                    created=str(nb.get("created", "")),
+                    updated=str(nb.get("updated", "")),
+                    source_count=await repo_relation_count("reference", target=nb_id),
+                    note_count=await repo_relation_count("artifact", target=nb_id),
                 )
-            validated_order_by = parts[0]
-        elif len(parts) == 2:
-            if parts[0] not in allowed_fields or parts[1] not in allowed_directions:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid order_by: '{order_by}'. Allowed fields: {', '.join(sorted(allowed_fields))}. Allowed directions: asc, desc",
-                )
-            validated_order_by = f"{parts[0]} {parts[1]}"
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid order_by format: '{order_by}'. Expected 'field' or 'field direction'",
             )
-
-        # Build the query with counts
-        query = f"""
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM notebook
-            ORDER BY {validated_order_by}
-        """
-
-        result = await repo_query(query)
-
-        # Filter by archived status if specified
-        if archived is not None:
-            result = [nb for nb in result if nb.get("archived") == archived]
-
-        return [
-            NotebookResponse(
-                id=str(nb.get("id", "")),
-                name=nb.get("name", ""),
-                description=nb.get("description", ""),
-                archived=nb.get("archived", False),
-                created=str(nb.get("created", "")),
-                updated=str(nb.get("updated", "")),
-                source_count=nb.get("source_count", 0),
-                note_count=nb.get("note_count", 0),
-            )
-            for nb in result
-        ]
+        return responses
     except HTTPException:
         raise
     except OpenNotebookError:
@@ -166,29 +148,21 @@ async def create_notebook(notebook: NotebookCreate):
 async def get_recently_viewed(
     limit: int = Query(12, ge=1, le=50, description="Number of items to return"),
 ):
-    """Get recently viewed notebooks and sources, newest first."""
     try:
-        notebooks = await repo_query(
-            """
-            SELECT id, name AS title, last_viewed_at
-            FROM notebook
-            WHERE last_viewed_at != NONE AND last_viewed_at != NULL
-            ORDER BY last_viewed_at DESC
-            LIMIT $limit
-            """,
-            {"limit": limit},
+        notebooks = await repo_list(
+            "notebook",
+            non_null_fields={"last_viewed_at"},
+            order_by="last_viewed_at",
+            descending=True,
+            limit=limit,
         )
-        sources = await repo_query(
-            """
-            SELECT id, title, last_viewed_at
-            FROM source
-            WHERE last_viewed_at != NONE AND last_viewed_at != NULL
-            ORDER BY last_viewed_at DESC
-            LIMIT $limit
-            """,
-            {"limit": limit},
+        sources = await repo_list(
+            "source",
+            non_null_fields={"last_viewed_at"},
+            order_by="last_viewed_at",
+            descending=True,
+            limit=limit,
         )
-
         items = [
             *[_recently_viewed_notebook(nb) for nb in notebooks],
             *[_recently_viewed_source(src) for src in sources],
@@ -200,8 +174,6 @@ async def get_recently_viewed(
     except OpenNotebookError:
         raise
     except Exception as e:
-        # Log full context server-side; return a generic message so internal
-        # details are not leaked to clients.
         logger.exception(f"Error fetching recently viewed items: {e}")
         raise HTTPException(
             status_code=500, detail="Error fetching recently viewed items"
@@ -241,33 +213,22 @@ async def get_notebook_delete_preview(notebook_id: str):
 
 @router.get("/notebooks/{notebook_id}", response_model=NotebookResponse)
 async def get_notebook(notebook_id: str):
-    """Get a specific notebook by ID."""
     try:
-        # Query with counts for single notebook
-        query = """
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM $notebook_id
-        """
-        result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
-
-        if not result:
-            raise HTTPException(status_code=404, detail="Notebook not found")
-
-        await _stamp_notebook_view(notebook_id)
-
-        nb = result[0]
+        notebook = await Notebook.get(notebook_id)
+        await _stamp_notebook_view(notebook.id or notebook_id)
+        nb_id = notebook.id or notebook_id
         return NotebookResponse(
-            id=str(nb.get("id", "")),
-            name=nb.get("name", ""),
-            description=nb.get("description", ""),
-            archived=nb.get("archived", False),
-            created=str(nb.get("created", "")),
-            updated=str(nb.get("updated", "")),
-            source_count=nb.get("source_count", 0),
-            note_count=nb.get("note_count", 0),
+            id=nb_id,
+            name=notebook.name,
+            description=notebook.description,
+            archived=notebook.archived or False,
+            created=str(notebook.created),
+            updated=str(notebook.updated),
+            source_count=await repo_relation_count("reference", target=nb_id),
+            note_count=await repo_relation_count("artifact", target=nb_id),
         )
+    except NotFoundError:
+        raise HTTPException(status_code=404, detail="Notebook not found")
     except HTTPException:
         raise
     except OpenNotebookError:
@@ -281,59 +242,32 @@ async def get_notebook(notebook_id: str):
 
 @router.put("/notebooks/{notebook_id}", response_model=NotebookResponse)
 async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
-    """Update a notebook."""
     try:
         notebook = await Notebook.get(notebook_id)
-
-        # Update only provided fields
         if notebook_update.name is not None:
             notebook.name = notebook_update.name
         if notebook_update.description is not None:
             notebook.description = notebook_update.description
         if notebook_update.archived is not None:
             notebook.archived = notebook_update.archived
-
         await notebook.save()
-
-        # Query with counts after update
-        query = """
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM $notebook_id
-        """
-        result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
-
-        if result:
-            nb = result[0]
-            return NotebookResponse(
-                id=str(nb.get("id", "")),
-                name=nb.get("name", ""),
-                description=nb.get("description", ""),
-                archived=nb.get("archived", False),
-                created=str(nb.get("created", "")),
-                updated=str(nb.get("updated", "")),
-                source_count=nb.get("source_count", 0),
-                note_count=nb.get("note_count", 0),
-            )
-
-        # Fallback if query fails
+        nb_id = notebook.id or notebook_id
         return NotebookResponse(
-            id=notebook.id or "",
+            id=nb_id,
             name=notebook.name,
             description=notebook.description,
             archived=notebook.archived or False,
             created=str(notebook.created),
             updated=str(notebook.updated),
-            source_count=0,
-            note_count=0,
+            source_count=await repo_relation_count("reference", target=nb_id),
+            note_count=await repo_relation_count("artifact", target=nb_id),
         )
-    except HTTPException:
-        raise
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook not found")
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except OpenNotebookError:
         raise
     except Exception as e:
@@ -345,36 +279,18 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
 
 @router.post("/notebooks/{notebook_id}/sources/{source_id}")
 async def add_source_to_notebook(notebook_id: str, source_id: str):
-    """Add an existing source to a notebook (create the reference)."""
     try:
-        # Verify the notebook and source exist (raises NotFoundError -> 404)
         await Notebook.get(notebook_id)
         await Source.get(source_id)
-
-        # Check if reference already exists (idempotency)
-        existing_ref = await repo_query(
-            "SELECT * FROM reference WHERE out = $source_id AND in = $notebook_id",
-            {
-                "notebook_id": ensure_record_id(notebook_id),
-                "source_id": ensure_record_id(source_id),
-            },
-        )
-
-        # If reference doesn't exist, create it
-        if not existing_ref:
-            await repo_query(
-                "RELATE $source_id->reference->$notebook_id",
-                {
-                    "notebook_id": ensure_record_id(notebook_id),
-                    "source_id": ensure_record_id(source_id),
-                },
-            )
-
+        if not await repo_relation_exists(
+            "reference", source=source_id, target=notebook_id
+        ):
+            await repo_relate(source_id, "reference", notebook_id)
         return {"message": "Source linked to notebook successfully"}
-    except HTTPException:
-        raise
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook or source not found")
+    except HTTPException:
+        raise
     except OpenNotebookError:
         raise
     except Exception as e:
@@ -388,25 +304,14 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
 
 @router.delete("/notebooks/{notebook_id}/sources/{source_id}")
 async def remove_source_from_notebook(notebook_id: str, source_id: str):
-    """Remove a source from a notebook (delete the reference)."""
     try:
-        # Verify the notebook exists (raises NotFoundError -> 404)
         await Notebook.get(notebook_id)
-
-        # Delete the reference record linking source to notebook
-        await repo_query(
-            "DELETE FROM reference WHERE out = $notebook_id AND in = $source_id",
-            {
-                "notebook_id": ensure_record_id(notebook_id),
-                "source_id": ensure_record_id(source_id),
-            },
-        )
-
+        await repo_delete_relations("reference", source=source_id, target=notebook_id)
         return {"message": "Source removed from notebook successfully"}
-    except HTTPException:
-        raise
     except NotFoundError:
         raise HTTPException(status_code=404, detail="Notebook not found")
+    except HTTPException:
+        raise
     except OpenNotebookError:
         raise
     except Exception as e:

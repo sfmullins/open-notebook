@@ -55,7 +55,11 @@ from api.models import (
     RegisterModelsResponse,
     UpdateCredentialRequest,
 )
-from open_notebook.database.repository import ensure_record_id, repo_delete, repo_query
+from open_notebook.database.repository import (
+    repo_delete,
+    repo_list,
+    repo_update_record,
+)
 from open_notebook.domain.credential import Credential
 from open_notebook.exceptions import (
     NotFoundError,
@@ -328,10 +332,7 @@ async def delete_credential(
             )
 
             # Query linked models
-            linked = await repo_query(
-                "SELECT * FROM model WHERE credential = $cred_id",
-                {"cred_id": ensure_record_id(credential_id)},
-            )
+            linked = await repo_list("model", filters={"credential": credential_id})
             deleted_models = 0
 
             if linked and migrate_to:
@@ -340,16 +341,8 @@ async def delete_credential(
                 for model_row in linked:
                     model_id = str(model_row.get("id", ""))
                     if model_id:
-                        await repo_query(
-                            "UPDATE $model_id SET credential = $target_id",
-                            {
-                                "model_id": ensure_record_id(model_id),
-                                # A fetched credential always has an id; fall
-                                # back to the requested id for the type checker.
-                                "target_id": ensure_record_id(
-                                    target_cred.id or migrate_to
-                                ),
-                            },
+                        await repo_update_record(
+                            model_id, {"credential": target_cred.id or migrate_to}
                         )
             elif linked:
                 # Cascade-delete linked models

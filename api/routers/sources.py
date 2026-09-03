@@ -30,9 +30,19 @@ from api.models import (
     SourceStatusResponse,
     SourceUpdate,
 )
+from command_queue import execute_command_sync, submit_command
 from commands.source_commands import SourceProcessingInput
 from open_notebook.config import UPLOADS_FOLDER
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.embeddings import count_source_embeddings
+from open_notebook.database.repository import (
+    ensure_record_id,
+    repo_command_rows,
+    repo_count,
+    repo_list,
+    repo_related_records,
+    repo_relations,
+    repo_update_record,
+)
 from open_notebook.domain.notebook import Asset, Notebook, Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import (
@@ -41,7 +51,6 @@ from open_notebook.exceptions import (
     OpenNotebookError,
     UnsupportedTypeException,
 )
-from surreal_commands import execute_command_sync, submit_command
 
 router = APIRouter()
 
@@ -85,30 +94,43 @@ def _truncate_error(msg: Optional[str], limit: int = 200) -> Optional[str]:
 
 
 SOURCE_SORT_FIELDS = {
-    "created": "created",
-    "updated": "updated",
-    # `title` carries a SEARCH (BM25) index; SurrealDB's planner tries to use
-    # it for ORDER BY and fails ("No iterator has been found"), so we sort by
-    # a computed alias instead — which also makes the sort case-insensitive.
-    "title": "title_sort",
-    "insights_count": "insights_count",
-    "embedded": "embedded",
-    "type": "type",
+    "created",
+    "updated",
+    "title",
+    "insights_count",
+    "embedded",
+    "type",
 }
 
-SOURCE_TYPE_EXPRESSION = (
-    "IF asset.file_path != NONE THEN 'file' "
-    "ELSE IF asset.url != NONE THEN 'link' ELSE 'text' END"
-)
+
+def _source_type(row: dict[str, Any]) -> str:
+    asset = row.get("asset") or {}
+    if asset.get("file_path"):
+        return "file"
+    if asset.get("url"):
+        return "link"
+    return "text"
+
+
+def _source_sort_value(row: dict[str, Any], field: str) -> Any:
+    if field == "title":
+        return str(row.get("title") or "").lower()
+    if field == "type":
+        return _source_type(row)
+    if field == "insights_count":
+        return int(row.get("insights_count") or 0)
+    if field == "embedded":
+        return bool(row.get("embedded"))
+    return row.get(field)
 
 
 async def _stamp_source_view(source_id: str) -> None:
-    # Best-effort write-on-read: recording the view timestamp must never turn a
-    # successful read into a 500. Log and move on if the stamp update fails.
+    # Best-effort write-on-read; a failed view stamp must not fail the read.
     try:
-        await repo_query(
-            "UPDATE $source_id SET last_viewed_at = time::now();",
-            {"source_id": ensure_record_id(source_id)},
+        from datetime import datetime, timezone
+
+        await repo_update_record(
+            source_id, {"last_viewed_at": datetime.now(timezone.utc)}
         )
     except Exception as e:
         logger.warning(f"Failed to stamp last_viewed_at for source {source_id}: {e}")
@@ -267,9 +289,8 @@ async def get_sources(
     ),
     sort_order: str = Query("desc", description="Sort order (asc or desc)"),
 ):
-    """Get sources with pagination and sorting support."""
+    """Get sources using structured repository operations only."""
     try:
-        # Validate sort parameters
         if sort_by not in SOURCE_SORT_FIELDS:
             raise HTTPException(
                 status_code=400,
@@ -278,58 +299,54 @@ async def get_sources(
                     "insights_count, embedded"
                 ),
             )
-        if sort_order.lower() not in ["asc", "desc"]:
+        descending = sort_order.lower() == "desc"
+        if sort_order.lower() not in {"asc", "desc"}:
             raise HTTPException(
                 status_code=400, detail="sort_order must be 'asc' or 'desc'"
             )
 
-        # Build ORDER BY clause
-        order_clause = (
-            f"ORDER BY {SOURCE_SORT_FIELDS[sort_by]} {sort_order.upper()}, id ASC"
-        )
-
-        # Build the query - same projection with or without the notebook
-        # filter; only the FROM clause and bound params differ.
-        params: dict[str, Any] = {"limit": limit, "offset": offset}
         if notebook_id:
-            # Verify notebook exists first
-            notebook = await Notebook.get(notebook_id)
-            if not notebook:
-                raise HTTPException(status_code=404, detail="Notebook not found")
-
-            from_clause = "(select value in from reference where out=$notebook_id)"
-            params["notebook_id"] = ensure_record_id(notebook_id)
+            await Notebook.get(notebook_id)
+            rows = await repo_related_records(
+                "reference", target=notebook_id, related_side="source"
+            )
         else:
-            from_clause = "source"
+            rows = await repo_list("source")
 
-        # Query sources - include command field with FETCH
-        query = f"""
-            SELECT id, asset, created, title, updated, topics, command,
-            string::lowercase(title OR '') AS title_sort,
-            ({SOURCE_TYPE_EXPRESSION}) AS type,
-            (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
-            (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
-            FROM {from_clause}
-            {order_clause}
-            LIMIT $limit START $offset
-            FETCH command
-        """
-        result = await repo_query(query, params)
+        for row in rows:
+            source_id = str(row.get("id", ""))
+            row["insights_count"] = await repo_count(
+                "source_insight", filters={"source": source_id}
+            )
+            row["embedded"] = (
+                await count_source_embeddings(ensure_record_id(source_id)) > 0
+            )
+            row["type"] = _source_type(row)
 
-        # Convert result to response model
-        # Command data is already fetched via FETCH command clause
+        rows.sort(key=lambda row: str(row.get("id", "")))
+        rows.sort(
+            key=lambda row: (
+                _source_sort_value(row, sort_by) is None,
+                _source_sort_value(row, sort_by),
+            ),
+            reverse=descending,
+        )
+        rows = rows[offset : offset + limit]
+
+        command_ids = [str(row["command"]) for row in rows if row.get("command")]
+        command_map = {
+            str(row.get("id")): row for row in await repo_command_rows(command_ids)
+        }
+
         response_list = []
-        for row in result:
-            command = row.get("command")
-            command_id = None
+        for row in rows:
+            command_ref = str(row.get("command")) if row.get("command") else None
+            command = command_map.get(command_ref or "")
+            command_id = command_ref
             status = None
             processing_info = None
-
-            # Extract status from fetched command object (already resolved by FETCH)
-            if command and isinstance(command, dict):
-                command_id = str(command.get("id")) if command.get("id") else None
+            if command:
                 status = command.get("status")
-                # Extract execution metadata from nested result structure
                 result_data = command.get("result")
                 execution_metadata = (
                     result_data.get("execution_metadata", {})
@@ -341,36 +358,30 @@ async def get_sources(
                     "completed_at": execution_metadata.get("completed_at"),
                     "error": _truncate_error(command.get("error_message")),
                 }
-            elif command:
-                # Command exists but FETCH failed to resolve it (broken reference)
-                command_id = str(command)
+            elif command_ref:
                 status = "unknown"
 
             response_list.append(
                 SourceListResponse(
-                    id=row["id"],
+                    id=str(row.get("id", "")),
                     title=row.get("title"),
                     topics=row.get("topics") or [],
                     asset=AssetModel(
-                        file_path=row["asset"].get("file_path")
-                        if row.get("asset")
-                        else None,
-                        url=row["asset"].get("url") if row.get("asset") else None,
+                        file_path=(row.get("asset") or {}).get("file_path"),
+                        url=(row.get("asset") or {}).get("url"),
                     )
                     if row.get("asset")
                     else None,
-                    embedded=row.get("embedded", False),
-                    embedded_chunks=0,  # Not needed in list view
-                    insights_count=row.get("insights_count", 0),
-                    created=str(row["created"]),
-                    updated=str(row["updated"]),
-                    # Status fields from fetched command
+                    embedded=bool(row.get("embedded")),
+                    embedded_chunks=0,
+                    insights_count=int(row.get("insights_count") or 0),
+                    created=str(row.get("created", "")),
+                    updated=str(row.get("updated", "")),
                     command_id=command_id,
                     status=status,
                     processing_info=processing_info,
                 )
             )
-
         return response_list
     except HTTPException:
         raise
@@ -485,7 +496,7 @@ async def _create_source_async_path(
     """ASYNC PATH: Create source record first, then queue command."""
     logger.info("Using async processing path")
 
-    # Create source record with asset - let SurrealDB generate the ID
+    # Create source record with asset - let the repository generate the ID
     # Persist asset before save so it's available for retry if processing fails
     if source_data.type == "link":
         source_asset = Asset(url=source_data.url)
@@ -575,7 +586,7 @@ async def _create_source_sync_path(
         # Import command modules to ensure they're registered
         import commands.source_commands  # noqa: F401
 
-        # Create source record - let SurrealDB generate the ID
+        # Create source record - let the repository generate the ID
         source = Source(
             title=source_data.title or "Processing...",
             topics=[],
@@ -776,13 +787,10 @@ async def get_source(source_id: str):
         embedded_chunks = await source.get_embedded_chunks()
 
         # Get associated notebooks
-        notebooks_query = await repo_query(
-            "SELECT VALUE out FROM reference WHERE in = $source_id",
-            {"source_id": ensure_record_id(source.id or source_id)},
+        notebook_relations = await repo_relations(
+            "reference", source=source.id or source_id
         )
-        notebook_ids = (
-            [str(nb_id) for nb_id in notebooks_query] if notebooks_query else []
-        )
+        notebook_ids = [str(relation["out"]) for relation in notebook_relations]
 
         return _source_to_response(
             source,
@@ -959,11 +967,8 @@ async def retry_source_processing(source_id: str):
         # (RELATE source->reference->notebook), so it only has `in`/`out` columns —
         # there is no `source`/`notebook` column. Mirror the working query at the
         # source-list path above. See issue #861.
-        references = await repo_query(
-            "SELECT VALUE out FROM reference WHERE in = $source_id",
-            {"source_id": ensure_record_id(source.id or source_id)},
-        )
-        notebook_ids = [str(nb_id) for nb_id in references] if references else []
+        references = await repo_relations("reference", source=source.id or source_id)
+        notebook_ids = [str(relation["out"]) for relation in references]
 
         if not notebook_ids:
             raise HTTPException(

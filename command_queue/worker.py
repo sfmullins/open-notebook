@@ -12,7 +12,7 @@ import socket
 
 from loguru import logger
 
-from surreal_commands import claim_job, run_claimed_job
+from command_queue import claim_job, run_claimed_job
 
 
 def import_command_modules(package_name: str) -> None:

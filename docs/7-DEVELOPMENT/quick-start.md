@@ -1,128 +1,80 @@
-# Quick Start - Development
-
-Get Open Notebook running locally in 5 minutes.
+# Quick Start — Development
 
 ## Prerequisites
 
-- **Python 3.11+**
-- **Git**
-- **uv** (package manager) - install with `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- **Docker** (optional, for SurrealDB)
+- Python 3.12
+- Git
+- uv
+- Node.js 22
+- PostgreSQL 17 with pgvector
 
-## 1. Clone the Repository (2 min)
+For local development, PostgreSQL can run natively or in Docker.
+
+## 1. Clone and install
 
 ```bash
-# Fork the repository on GitHub first, then clone your fork
 git clone https://github.com/YOUR_USERNAME/open-notebook.git
 cd open-notebook
-
-# Add upstream remote for updates
 git remote add upstream https://github.com/lfnovo/open-notebook.git
-```
-
-## 2. Install Dependencies (2 min)
-
-```bash
-# Install Python dependencies
 uv sync
-
-# Verify uv is working
-uv --version
+cd frontend && npm install && cd ..
 ```
 
-## 3. Start Services (1 min)
-
-In separate terminal windows:
+## 2. Configure
 
 ```bash
-# Terminal 1: Start SurrealDB (database)
-make database
-# or: docker run -d --name surrealdb -p 127.0.0.1:8000:8000 surrealdb/surrealdb:v2 start --user root --pass password memory
+cp .env.example .env
+```
 
-# Terminal 2: Start API (backend on port 5055)
-make api
-# or: uv run --env-file .env uvicorn api.main:app --host 0.0.0.0 --port 5055
+Set a stable encryption key and PostgreSQL DSN:
 
-# Terminal 3: Start Frontend (UI on port 3000)
+```dotenv
+OPEN_NOTEBOOK_ENCRYPTION_KEY=replace-with-a-long-random-secret
+DATABASE_URL=postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+POSTGRES_URL=postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+```
+
+## 3. Start PostgreSQL/pgvector
+
+Example local container:
+
+```bash
+docker run -d --name open-notebook-postgres \
+  -e POSTGRES_USER=open_notebook \
+  -e POSTGRES_PASSWORD=open_notebook \
+  -e POSTGRES_DB=open_notebook \
+  -p 127.0.0.1:5432:5432 \
+  pgvector/pgvector:0.8.6-pg17-bookworm
+```
+
+## 4. Start application services
+
+In separate terminals:
+
+```bash
+# API
+uv run --env-file .env run_api.py
+
+# Worker
+uv run --env-file .env open-notebook-command-worker --import-modules commands --max-tasks 5
+
+# Frontend
 cd frontend && npm run dev
 ```
 
-## 4. Verify Everything Works (instant)
+## 5. Verify
 
-- **API Health**: http://localhost:5055/health → should return `{"status": "ok"}`
-- **API Docs**: http://localhost:5055/docs → interactive API documentation
-- **Frontend**: http://localhost:3000 → Open Notebook UI
+- API health: http://localhost:5055/health
+- API docs: http://localhost:5055/docs
+- Frontend: http://localhost:3000
 
-**All three show up?** ✅ You're ready to develop!
-
----
-
-## Next Steps
-
-- **First Issue?** Pick a [good first issue](https://github.com/lfnovo/open-notebook/issues?q=label%3A%22good+first+issue%22)
-- **Understand the code?** Read [Architecture Overview](architecture.md)
-- **Make changes?** Follow [Contributing Guide](contributing.md)
-- **Setup details?** See [Development Setup](development-setup.md)
-
----
-
-## Troubleshooting
-
-### "Port 5055 already in use"
-```bash
-# Find what's using the port
-lsof -i :5055
-
-# Use a different port
-uv run uvicorn api.main:app --port 5056
-```
-
-### "Can't connect to SurrealDB"
-```bash
-# Check if SurrealDB is running
-docker ps | grep surrealdb
-
-# Restart it
-make database
-```
-
-### "Python version is too old"
-```bash
-# Check your Python version
-python --version  # Should be 3.11+
-
-# Use Python 3.11 specifically
-uv sync --python 3.11
-```
-
-### "npm: command not found"
-```bash
-# Install Node.js from https://nodejs.org/
-# Then install frontend dependencies
-cd frontend && npm install
-```
-
----
-
-## Common Development Commands
+## Quality commands
 
 ```bash
-# Run tests
-uv run pytest
-
-# Format code
-make ruff
-
-# Type checking
-make lint
-
-# Run the full stack
-make start-all
-
-# View API documentation
-open http://localhost:5055/docs
+uv run ruff check .
+uv run python -m mypy .
+uv run pytest tests/
+cd frontend && npm run lint && npm run test:coverage && npm run build
 ```
 
----
-
-Need more help? See [Development Setup](development-setup.md) for details or join our [Discord](https://discord.gg/37XJPXfz2w).
+See [Development Setup](development-setup.md), [Architecture](architecture.md), and [Dockerless PostgreSQL](dockerless-postgresql.md) for deeper guidance.

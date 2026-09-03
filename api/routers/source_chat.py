@@ -16,7 +16,7 @@ from api.routers._chat_shared import (
     get_source_or_404,
     get_verified_source_session,
 )
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repository import repo_related_records
 from open_notebook.domain.notebook import ChatSession
 from open_notebook.exceptions import (
     NotFoundError,
@@ -133,40 +133,25 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
         # Verify source exists (normalizes the ID and 404s if missing)
         full_source_id, _source = await get_source_or_404(source_id)
 
-        # Get sessions that refer to this source - first get relations, then sessions
-        relations = await repo_query(
-            "SELECT in FROM refers_to WHERE out = $source_id",
-            {"source_id": ensure_record_id(full_source_id)},
+        # Resolve sessions linked to this source in one repository operation.
+        session_rows = await repo_related_records(
+            "refers_to", target=full_source_id, related_side="source"
         )
-
         sessions = []
-        for relation in relations:
-            session_id_raw = relation.get("in")
-            if session_id_raw:
-                session_id = str(session_id_raw)
-
-                session_result = await repo_query(
-                    "SELECT * FROM $id", {"id": ensure_record_id(session_id)}
+        for session_data in session_rows:
+            session_id = str(session_data.get("id", ""))
+            msg_count = await get_session_message_count(source_chat_graph, session_id)
+            sessions.append(
+                SourceChatSessionResponse(
+                    id=session_id,
+                    title=session_data.get("title") or "Untitled Session",
+                    source_id=source_id,
+                    model_override=session_data.get("model_override"),
+                    created=str(session_data.get("created")),
+                    updated=str(session_data.get("updated")),
+                    message_count=msg_count,
                 )
-                if session_result and len(session_result) > 0:
-                    session_data = session_result[0]
-
-                    # Get message count from LangGraph state
-                    msg_count = await get_session_message_count(
-                        source_chat_graph, session_id
-                    )
-
-                    sessions.append(
-                        SourceChatSessionResponse(
-                            id=session_data.get("id") or "",
-                            title=session_data.get("title") or "Untitled Session",
-                            source_id=source_id,
-                            model_override=session_data.get("model_override"),
-                            created=str(session_data.get("created")),
-                            updated=str(session_data.get("updated")),
-                            message_count=msg_count,
-                        )
-                    )
+            )
 
         # Sort sessions by created date (newest first)
         sessions.sort(key=lambda x: x.created, reverse=True)

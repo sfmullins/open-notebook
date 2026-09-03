@@ -42,6 +42,16 @@ def make_input(speaker_profile=None):
     )
 
 
+@pytest.fixture(autouse=True)
+def _external_podcast_runtime_stub():
+    """Unit tests do not require the operator-supplied FFmpeg runtime."""
+    with patch(
+        "commands.podcast_commands._load_podcast_creator",
+        return_value=(Mock(), AsyncMock()),
+    ):
+        yield
+
+
 class TestSpeakerProfileResolution:
     @pytest.mark.asyncio
     async def test_provided_speaker_profile_wins_over_episode_config(self):
@@ -108,9 +118,7 @@ class TestSpeakerProfileResolution:
             ),
             patch.object(SpeakerProfile, "resolve", new=speaker_resolve),
         ):
-            with pytest.raises(
-                ValueError, match="has no speaker profile configured"
-            ):
+            with pytest.raises(ValueError, match="has no speaker profile configured"):
                 await generate_podcast_command(make_input(speaker_profile=None))
 
         speaker_resolve.assert_not_awaited()
@@ -132,35 +140,30 @@ class TestSpeakerProfileResolve:
     @pytest.mark.asyncio
     async def test_resolve_by_record_id_queries_by_id(self):
         with patch(
-            "open_notebook.podcasts.models.repo_query", new_callable=AsyncMock
+            "open_notebook.podcasts.models.repo_get", new_callable=AsyncMock
         ) as mock_query:
-            mock_query.return_value = [
-                {
-                    "id": "speaker_profile:abc",
-                    "name": "Tech Experts",
-                    "speakers": [
-                        {
-                            "name": "Alex",
-                            "voice_id": "v1",
-                            "backstory": "b",
-                            "personality": "p",
-                        }
-                    ],
-                }
-            ]
+            mock_query.return_value = {
+                "id": "speaker_profile:abc",
+                "name": "Tech Experts",
+                "speakers": [
+                    {
+                        "name": "Alex",
+                        "voice_id": "v1",
+                        "backstory": "b",
+                        "personality": "p",
+                    }
+                ],
+            }
             profile = await SpeakerProfile.resolve("speaker_profile:abc")
 
         assert profile is not None
         assert profile.name == "Tech Experts"
-        assert mock_query.await_args is not None
-        query, params = mock_query.await_args.args
-        assert "FROM $id" in query
-        assert str(params["id"]) == "speaker_profile:abc"
+        mock_query.assert_awaited_once_with("speaker_profile:abc")
 
     @pytest.mark.asyncio
     async def test_resolve_by_record_id_returns_none_when_missing(self):
         with patch(
-            "open_notebook.podcasts.models.repo_query", new_callable=AsyncMock
+            "open_notebook.podcasts.models.repo_get", new_callable=AsyncMock
         ) as mock_query:
             mock_query.return_value = []
             profile = await SpeakerProfile.resolve("speaker_profile:gone")
@@ -326,8 +329,8 @@ class TestOrphanedProfileDoesNotPoisonConfig:
         ]
         speaker_rows = [{"id": "speaker_profile:sp1", "name": "Tech Experts"}]
 
-        async def fake_repo_query(query, *args, **kwargs):
-            if "episode_profile" in query:
+        async def fake_repo_list(table, *args, **kwargs):
+            if table == "episode_profile":
                 return episode_rows
             return speaker_rows
 
@@ -357,20 +360,20 @@ class TestOrphanedProfileDoesNotPoisonConfig:
                 "commands.podcast_commands._resolve_model_config",
                 new=AsyncMock(return_value=resolved),
             ),
+            patch("commands.podcast_commands.repo_list", new=fake_repo_list),
             patch(
-                "commands.podcast_commands.repo_query", new=fake_repo_query
-            ),
-            patch("commands.podcast_commands.configure", new=fake_configure),
-            patch(
-                "commands.podcast_commands.create_podcast",
-                new=AsyncMock(
-                    return_value={
-                        "final_output_file_path": str(
-                            tmp_path / "episodes" / "ep-dir" / "out.mp3"
-                        ),
-                        "transcript": {},
-                        "outline": {},
-                    }
+                "commands.podcast_commands._load_podcast_creator",
+                return_value=(
+                    fake_configure,
+                    AsyncMock(
+                        return_value={
+                            "final_output_file_path": str(
+                                tmp_path / "episodes" / "ep-dir" / "out.mp3"
+                            ),
+                            "transcript": {},
+                            "outline": {},
+                        }
+                    ),
                 ),
             ),
             # audio_file is stored relative to PODCASTS_FOLDER and validated
@@ -399,6 +402,5 @@ class TestOrphanedProfileDoesNotPoisonConfig:
         assert "Orphaned Profile" not in episode_config
         # Record ID rewritten to the speaker profile NAME for podcast-creator
         assert (
-            episode_config["Test Episode Profile"]["speaker_config"]
-            == "Tech Experts"
+            episode_config["Test Episode Profile"]["speaker_config"] == "Tech Experts"
         )

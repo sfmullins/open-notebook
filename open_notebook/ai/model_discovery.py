@@ -16,7 +16,7 @@ from loguru import logger
 from open_notebook.ai.connection_tester import normalize_anthropic_compatible_base_url
 from open_notebook.ai.models import Model
 from open_notebook.ai.provider_registry import PROVIDERS
-from open_notebook.database.repository import repo_query
+from open_notebook.database.repository import repo_list
 from open_notebook.domain.credential import Credential
 from open_notebook.utils.url_validation import prepare_pinned_http_target
 
@@ -717,7 +717,9 @@ async def discover_openai_compatible_models() -> List[DiscoveredModel]:
                         )
                     )
     except httpx.HTTPStatusError as e:
-        logger.warning(f"Failed to discover openai_compatible models: HTTP {e.response.status_code}")
+        logger.warning(
+            f"Failed to discover openai_compatible models: HTTP {e.response.status_code}"
+        )
     except Exception as e:
         logger.warning(f"Failed to discover openai_compatible models: {e}")
 
@@ -736,7 +738,9 @@ async def discover_anthropic_compatible_models() -> List[DiscoveredModel]:
             api_key = config.get("api_key")
             base_url = config.get("base_url", "")
     except Exception as e:
-        logger.warning(f"Failed to read anthropic_compatible config from Credential: {e}")
+        logger.warning(
+            f"Failed to read anthropic_compatible config from Credential: {e}"
+        )
 
     if not api_key:
         api_key = os.environ.get("ANTHROPIC_COMPATIBLE_API_KEY")
@@ -931,10 +935,10 @@ async def sync_provider_models(
 
     # Batch fetch existing models to avoid N+1 query pattern
     try:
-        existing_models = await repo_query(
-            "SELECT string::lowercase(name) as name, string::lowercase(type) as type FROM model "
-            "WHERE string::lowercase(provider) = $provider",
-            {"provider": provider.lower()},
+        existing_models = await repo_list(
+            "model",
+            filters={"provider": provider},
+            case_insensitive_fields={"provider"},
         )
         # Create a set of (name, type) tuples for O(1) lookup
         existing_keys = set()
@@ -961,7 +965,9 @@ async def sync_provider_models(
             )
             await new_model.save()
             new_count += 1
-            logger.info(f"Registered new model: {model.provider}/{model.name} ({model.model_type})")
+            logger.info(
+                f"Registered new model: {model.provider}/{model.name} ({model.model_type})"
+            )
         except Exception as e:
             logger.warning(f"Failed to register model {model.name}: {e}")
 
@@ -1011,10 +1017,16 @@ async def get_provider_model_count(provider: str) -> Dict[str, int]:
         Dict mapping model type to count
     """
     # Use case-insensitive comparison by lowercasing the provider
-    result = await repo_query(
-        "SELECT type, count() as count FROM model WHERE string::lowercase(provider) = string::lowercase($provider) GROUP BY type",
-        {"provider": provider},
+    rows = await repo_list(
+        "model",
+        filters={"provider": provider},
+        case_insensitive_fields={"provider"},
     )
+    grouped: Dict[str, int] = {}
+    for row in rows:
+        model_type = row.get("type")
+        if isinstance(model_type, str) and model_type:
+            grouped[model_type] = grouped.get(model_type, 0) + 1
 
     counts = {
         "language": 0,
@@ -1023,9 +1035,7 @@ async def get_provider_model_count(provider: str) -> Dict[str, int]:
         "text_to_speech": 0,
     }
 
-    for row in result:
-        model_type = row.get("type")
-        count = row.get("count", 0)
+    for model_type, count in grouped.items():
         if model_type in counts:
             counts[model_type] = count
 

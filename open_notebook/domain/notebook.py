@@ -6,11 +6,25 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from command_queue import submit_command
+from open_notebook.database.embeddings import (
+    count_source_embeddings,
+    delete_source_embeddings,
+    text_search_pg,
+    vector_search_pg,
+)
 from open_notebook.database.record_id import RecordID
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repository import (
+    ensure_record_id,
+    repo_delete_relations,
+    repo_delete_where,
+    repo_list,
+    repo_related_records,
+    repo_relation_count,
+    repo_relations,
+)
 from open_notebook.domain.base import ObjectModel
 from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
-from surreal_commands import submit_command
 
 
 class Notebook(ObjectModel):
@@ -29,17 +43,20 @@ class Notebook(ObjectModel):
 
     async def get_sources(self, include_full_text: bool = False) -> List["Source"]:
         try:
-            source_projection = "" if include_full_text else " omit source.full_text"
-            srcs = await repo_query(
-                f"""
-                select *{source_projection} from (
-                select in as source from reference where out=$id
-                fetch source
-            ) order by source.updated desc
-            """,
-                {"id": ensure_record_id(self.id)},
+            rows = await repo_related_records(
+                "reference",
+                target=self.id,
+                related_side="source",
+                order_by="updated",
+                descending=True,
             )
-            return [Source(**src["source"]) for src in srcs] if srcs else []
+            sources = []
+            for row in rows:
+                data = dict(row)
+                if not include_full_text:
+                    data.pop("full_text", None)
+                sources.append(Source(**data))
+            return sources
         except Exception as e:
             logger.error(f"Error fetching sources for notebook {self.id}: {str(e)}")
             logger.exception(e)
@@ -47,21 +64,21 @@ class Notebook(ObjectModel):
 
     async def get_notes(self, include_content: bool = False) -> List["Note"]:
         try:
-            note_projection = (
-                " omit note.embedding"
-                if include_content
-                else " omit note.content, note.embedding"
+            rows = await repo_related_records(
+                "artifact",
+                target=self.id,
+                related_side="source",
+                order_by="updated",
+                descending=True,
             )
-            srcs = await repo_query(
-                f"""
-            select *{note_projection} from (
-                select in as note from artifact where out=$id
-                fetch note
-            ) order by note.updated desc
-            """,
-                {"id": ensure_record_id(self.id)},
-            )
-            return [Note(**src["note"]) for src in srcs] if srcs else []
+            notes = []
+            for row in rows:
+                data = dict(row)
+                data.pop("embedding", None)
+                if not include_content:
+                    data.pop("content", None)
+                notes.append(Note(**data))
+            return notes
         except Exception as e:
             logger.error(f"Error fetching notes for notebook {self.id}: {str(e)}")
             logger.exception(e)
@@ -135,22 +152,14 @@ class Notebook(ObjectModel):
 
     async def get_chat_sessions(self) -> List["ChatSession"]:
         try:
-            srcs = await repo_query(
-                """
-                select * from (
-                    select
-                    <- chat_session as chat_session
-                    from refers_to
-                    where out=$id
-                    fetch chat_session
-                )
-                order by chat_session.updated desc
-            """,
-                {"id": ensure_record_id(self.id)},
+            rows = await repo_related_records(
+                "refers_to",
+                target=self.id,
+                related_side="source",
+                order_by="updated",
+                descending=True,
             )
-            return (
-                [ChatSession(**src["chat_session"][0]) for src in srcs] if srcs else []
-            )
+            return [ChatSession(**row) for row in rows]
         except Exception as e:
             logger.error(
                 f"Error fetching chat sessions for notebook {self.id}: {str(e)}"
@@ -159,45 +168,19 @@ class Notebook(ObjectModel):
             raise DatabaseOperationError(e)
 
     async def get_delete_preview(self) -> Dict[str, Any]:
-        """
-        Get counts of items that would be affected by deleting this notebook.
-
-        Returns a dict with:
-        - note_count: Number of notes that will be deleted
-        - exclusive_source_count: Sources only in this notebook (can be deleted)
-        - shared_source_count: Sources in other notebooks (will be unlinked only)
-        """
+        """Return the records affected by deleting this notebook."""
         try:
-            notebook_id = ensure_record_id(self.id)
-
-            # Count notes
-            note_result = await repo_query(
-                "SELECT count() as count FROM artifact WHERE out = $notebook_id GROUP ALL",
-                {"notebook_id": notebook_id},
-            )
-            note_count = note_result[0]["count"] if note_result else 0
-
-            # Get sources with count of references to OTHER notebooks
-            # If assigned_others = 0, source is exclusive to this notebook
-            # If assigned_others > 0, source is shared with other notebooks
-            source_counts = await repo_query(
-                """
-                SELECT
-                    id,
-                    count(->reference[WHERE out != $notebook_id].out) as assigned_others
-                FROM (SELECT VALUE <-reference.in AS sources FROM $notebook_id)[0]
-                """,
-                {"notebook_id": notebook_id},
-            )
-
+            note_count = await repo_relation_count("artifact", target=self.id)
+            references = await repo_relations("reference", target=self.id)
             exclusive_count = 0
             shared_count = 0
-            for src in source_counts:
-                if src.get("assigned_others", 0) == 0:
+            for relation in references:
+                source_id = relation["in"]
+                assigned = await repo_relation_count("reference", source=source_id)
+                if assigned <= 1:
                     exclusive_count += 1
                 else:
                     shared_count += 1
-
             return {
                 "note_count": note_count,
                 "exclusive_source_count": exclusive_count,
@@ -209,61 +192,27 @@ class Notebook(ObjectModel):
             raise DatabaseOperationError(e)
 
     async def delete(self, delete_exclusive_sources: bool = False) -> Dict[str, int]:
-        """
-        Delete notebook with cascade deletion of notes and optional source deletion.
-
-        Args:
-            delete_exclusive_sources: If True, also delete sources that belong
-                                     only to this notebook. Default is False.
-
-        Returns:
-            Dict with counts: deleted_notes, deleted_sources, unlinked_sources,
-            deleted_chat_sessions
-        """
         if self.id is None:
             raise InvalidInputError("Cannot delete notebook without an ID")
-
         try:
-            notebook_id = ensure_record_id(self.id)
             deleted_notes = 0
             deleted_sources = 0
             unlinked_sources = 0
             deleted_chat_sessions = 0
 
-            # 1. Get and delete all notes linked to this notebook
-            notes = await self.get_notes()
-            for note in notes:
+            for note in await self.get_notes():
                 await note.delete()
                 deleted_notes += 1
-            logger.info(f"Deleted {deleted_notes} notes for notebook {self.id}")
+            await repo_delete_relations("artifact", target=self.id)
 
-            # Delete artifact relationships
-            await repo_query(
-                "DELETE artifact WHERE out = $notebook_id",
-                {"notebook_id": notebook_id},
-            )
-
-            # 2. Handle sources
+            references = await repo_relations("reference", target=self.id)
             if delete_exclusive_sources:
-                # Find sources with count of references to OTHER notebooks
-                # If assigned_others = 0, source is exclusive to this notebook
-                source_counts = await repo_query(
-                    """
-                    SELECT
-                        id,
-                        count(->reference[WHERE out != $notebook_id].out) as assigned_others
-                    FROM (SELECT VALUE <-reference.in AS sources FROM $notebook_id)[0]
-                    """,
-                    {"notebook_id": notebook_id},
-                )
-
-                for src in source_counts:
-                    source_id = src.get("id")
-                    if source_id and src.get("assigned_others", 0) == 0:
-                        # Exclusive source - delete it
+                for relation in references:
+                    source_id = relation["in"]
+                    assigned = await repo_relation_count("reference", source=source_id)
+                    if assigned <= 1:
                         try:
-                            source = await Source.get(str(source_id))
-                            await source.delete()
+                            await (await Source.get(source_id)).delete()
                             deleted_sources += 1
                         except Exception as e:
                             logger.warning(
@@ -272,43 +221,19 @@ class Notebook(ObjectModel):
                     else:
                         unlinked_sources += 1
             else:
-                # Just count sources that will be unlinked
-                source_result = await repo_query(
-                    "SELECT count() as count FROM reference WHERE out = $notebook_id GROUP ALL",
-                    {"notebook_id": notebook_id},
-                )
-                unlinked_sources = source_result[0]["count"] if source_result else 0
+                unlinked_sources = len(references)
+            await repo_delete_relations("reference", target=self.id)
 
-            # Delete reference relationships (unlink all sources)
-            await repo_query(
-                "DELETE reference WHERE out = $notebook_id",
-                {"notebook_id": notebook_id},
-            )
-            logger.info(
-                f"Unlinked {unlinked_sources} sources, deleted {deleted_sources} "
-                f"exclusive sources for notebook {self.id}"
-            )
-
-            # 3. Delete chat sessions linked to this notebook
-            chat_sessions = await self.get_chat_sessions()
-            for chat_session in chat_sessions:
+            for chat_session in await self.get_chat_sessions():
                 await chat_session.delete()
                 deleted_chat_sessions += 1
-            logger.info(
-                f"Deleted {deleted_chat_sessions} chat sessions for notebook {self.id}"
-            )
-
-            # 4. Delete the notebook record itself
             await super().delete()
-            logger.info(f"Deleted notebook {self.id}")
-
             return {
                 "deleted_notes": deleted_notes,
                 "deleted_sources": deleted_sources,
                 "unlinked_sources": unlinked_sources,
                 "deleted_chat_sessions": deleted_chat_sessions,
             }
-
         except Exception as e:
             logger.error(f"Error deleting notebook {self.id}: {e}")
             logger.exception(e)
@@ -323,69 +248,44 @@ class Asset(BaseModel):
 class SourceEmbedding(ObjectModel):
     table_name: ClassVar[str] = "source_embedding"
     content: str
+    source: Optional[str] = None
 
     async def get_source(self) -> "Source":
-        try:
-            src = await repo_query(
-                """
-            select source.* from $id fetch source
-            """,
-                {"id": ensure_record_id(self.id)},
-            )
-            return Source(**src[0]["source"])
-        except Exception as e:
-            logger.error(f"Error fetching source for embedding {self.id}: {str(e)}")
-            logger.exception(e)
-            raise DatabaseOperationError(e)
+        if not self.source:
+            raise DatabaseOperationError(f"Embedding {self.id} has no source reference")
+        return await Source.get(str(self.source))
 
 
 class SourceInsight(ObjectModel):
     table_name: ClassVar[str] = "source_insight"
     insight_type: str
     content: str
+    source: Optional[str] = None
 
     @classmethod
     async def get_for_sources(
         cls, source_ids: List[str]
     ) -> Dict[str, List["SourceInsight"]]:
-        """
-        Batch-fetch insights for many sources in a single query.
-
-        Building notebook/chat context otherwise calls get_insights() once
-        per source - fine for one source, but O(n) round trips (each paying
-        its own connection setup - no pooling in the repository layer) when
-        a caller loops over every source in a notebook.
-        """
         grouped: Dict[str, List[SourceInsight]] = {sid: [] for sid in source_ids if sid}
         if not grouped:
             return grouped
         try:
-            result = await repo_query(
-                "SELECT * FROM source_insight WHERE source IN $source_ids",
-                {"source_ids": [ensure_record_id(sid) for sid in grouped]},
+            rows = await repo_list(
+                "source_insight", in_filters={"source": grouped.keys()}
             )
         except Exception as e:
             logger.error(f"Error batch-fetching insights for sources: {str(e)}")
             logger.exception(e)
             raise DatabaseOperationError("Failed to fetch insights for sources")
-        for row in result:
+        for row in rows:
             key = str(row.get("source"))
             grouped.setdefault(key, []).append(cls(**row))
         return grouped
 
     async def get_source(self) -> "Source":
-        try:
-            src = await repo_query(
-                """
-            select source.* from $id fetch source
-            """,
-                {"id": ensure_record_id(self.id)},
-            )
-            return Source(**src[0]["source"])
-        except Exception as e:
-            logger.error(f"Error fetching source for insight {self.id}: {str(e)}")
-            logger.exception(e)
-            raise DatabaseOperationError(e)
+        if not self.source:
+            raise DatabaseOperationError(f"Insight {self.id} has no source reference")
+        return await Source.get(str(self.source))
 
     async def save_as_note(self, notebook_id: Optional[str] = None) -> Any:
         source = await self.get_source()
@@ -409,7 +309,7 @@ class Source(ObjectModel):
     full_text: Optional[str] = None
     last_viewed_at: Optional[datetime] = None
     command: Optional[Union[str, RecordID]] = Field(
-        default=None, description="Link to surreal-commands processing job"
+        default=None, description="Link to PostgreSQL command queue processing job"
     )
 
     @field_validator("command", mode="before")
@@ -436,7 +336,7 @@ class Source(ObjectModel):
             return None
 
         try:
-            from surreal_commands import get_command_status
+            from command_queue import get_command_status
 
             status = await get_command_status(str(self.command))
             return status.status if status else "unknown"
@@ -450,7 +350,7 @@ class Source(ObjectModel):
             return None
 
         try:
-            from surreal_commands import get_command_status
+            from command_queue import get_command_status
 
             status_result = await get_command_status(str(self.command))
             if not status_result:
@@ -481,7 +381,9 @@ class Source(ObjectModel):
         # Callers looping over many sources can batch-fetch insights up front
         # via SourceInsight.get_for_sources() and pass them in here, instead
         # of paying a separate query per source.
-        insight_objects = insights if insights is not None else await self.get_insights()
+        insight_objects = (
+            insights if insights is not None else await self.get_insights()
+        )
         insights = [insight.model_dump() for insight in insight_objects]
         if context_size == "long":
             return dict(
@@ -495,15 +397,7 @@ class Source(ObjectModel):
 
     async def get_embedded_chunks(self) -> int:
         try:
-            result = await repo_query(
-                """
-                select count() as chunks from source_embedding where source=$id GROUP ALL
-                """,
-                {"id": ensure_record_id(self.id)},
-            )
-            if len(result) == 0:
-                return 0
-            return result[0]["chunks"]
+            return await count_source_embeddings(ensure_record_id(self.id))
         except Exception as e:
             logger.error(f"Error fetching chunks count for source {self.id}: {str(e)}")
             logger.exception(e)
@@ -511,13 +405,8 @@ class Source(ObjectModel):
 
     async def get_insights(self) -> List[SourceInsight]:
         try:
-            result = await repo_query(
-                """
-                SELECT * FROM source_insight WHERE source=$id
-                """,
-                {"id": ensure_record_id(self.id)},
-            )
-            return [SourceInsight(**insight) for insight in result]
+            rows = await repo_list("source_insight", filters={"source": self.id})
+            return [SourceInsight(**row) for row in rows]
         except Exception as e:
             logger.error(f"Error fetching insights for source {self.id}: {str(e)}")
             logger.exception(e)
@@ -598,7 +487,7 @@ class Source(ObjectModel):
             InvalidInputError: If insight_type or content is empty
             DatabaseOperationError: If submitting the command fails. Matches
                 vectorize()'s contract - callers (transformation.py, source.py)
-                run inside surreal-commands jobs whose outer exception
+                run inside PostgreSQL command queue jobs whose outer exception
                 handling already retries transient failures, so a swallowed
                 submission failure here previously meant a transformation
                 could report success while the insight was silently never
@@ -626,7 +515,9 @@ class Source(ObjectModel):
             return str(command_id)
 
         except Exception as e:
-            logger.exception(f"Error submitting create_insight for source {self.id}: {e}")
+            logger.exception(
+                f"Error submitting create_insight for source {self.id}: {e}"
+            )
             raise DatabaseOperationError(e)
 
     def _prepare_save_data(self) -> dict:
@@ -661,14 +552,8 @@ class Source(ObjectModel):
         # Delete associated embeddings and insights to prevent orphaned records
         try:
             source_id = ensure_record_id(self.id)
-            await repo_query(
-                "DELETE source_embedding WHERE source = $source_id",
-                {"source_id": source_id},
-            )
-            await repo_query(
-                "DELETE source_insight WHERE source = $source_id",
-                {"source_id": source_id},
-            )
+            await delete_source_embeddings(source_id)
+            await repo_delete_where("source_insight", filters={"source": self.id})
             logger.debug(f"Deleted embeddings and insights for source {self.id}")
         except Exception as e:
             logger.warning(
@@ -770,36 +655,7 @@ async def text_search(
     if not keyword:
         raise InvalidInputError("Search keyword cannot be empty")
     try:
-        search_results = await repo_query(
-            """
-            select *
-            from fn::text_search($keyword, $results, $source, $note)
-            """,
-            {"keyword": keyword, "results": results, "source": source, "note": note},
-        )
-        return search_results
-    except RuntimeError as e:
-        # SurrealDB's search::highlight can compute a byte position that exceeds the
-        # stored string length on large or multi-byte chunks, aborting the whole query
-        # ("position overflow"). Fall back to vector search so the user still gets
-        # results instead of a 500. See issue #648.
-        if "position overflow" in str(e):
-            logger.warning(
-                f"Highlight position overflow, falling back to vector search: {str(e)}"
-            )
-            try:
-                return await vector_search(keyword, results, source, note)
-            except Exception as ve:
-                # Both search paths failed (e.g. no embedding model configured).
-                # Surface the failure instead of returning [] — an empty list would
-                # be indistinguishable from a legitimate "no matches" and mask a
-                # total search outage from callers.
-                logger.error(f"Vector search fallback also failed: {str(ve)}")
-                logger.exception(ve)
-                raise DatabaseOperationError(ve)
-        logger.error(f"Error performing text search: {str(e)}")
-        logger.exception(e)
-        raise DatabaseOperationError(e)
+        return await text_search_pg(keyword, results, source, note)
     except Exception as e:
         logger.error(f"Error performing text search: {str(e)}")
         logger.exception(e)
@@ -818,21 +674,14 @@ async def vector_search(
     try:
         from open_notebook.utils.embedding import generate_embedding
 
-        # Use unified embedding function (handles chunking if query is very long)
         embed = await generate_embedding(keyword)
-        search_results = await repo_query(
-            """
-            SELECT * FROM fn::vector_search($embed, $results, $source, $note, $minimum_score);
-            """,
-            {
-                "embed": embed,
-                "results": results,
-                "source": source,
-                "note": note,
-                "minimum_score": minimum_score,
-            },
+        return await vector_search_pg(
+            embed,
+            results,
+            source=source,
+            note=note,
+            minimum_score=minimum_score,
         )
-        return search_results
     except Exception as e:
         logger.error(f"Error performing vector search: {str(e)}")
         logger.exception(e)

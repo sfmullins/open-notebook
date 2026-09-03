@@ -1,285 +1,114 @@
-# Open Notebook Windows Installation Guide (Native, No Docker)
+# Windows Native Installation
 
-This guide documents how to install and run [Open Notebook](https://github.com/lfnovo/open-notebook) on Windows **natively without Docker or WSL**.
-
-## Who Is This For?
-
-- **Windows ARM64 users** - Docker Desktop and WSL2 have limitations on ARM64
-- **Users without Hyper-V** - Some Windows editions don't support Docker
-- **Users who prefer native installs** - Simpler architecture, easier debugging
-
-## What This Guide Covers
-
-- Native Windows installation steps
-- Critical configuration fixes for Windows
-- Troubleshooting common issues
-- Upgrade and maintenance scripts
+Open Notebook is PostgreSQL-native. SurrealDB is not a supported runtime database.
 
 ## Prerequisites
 
-| Software     | Installation                     | Required |
-| ------------ | -------------------------------- | -------- |
-| Git          | `winget install Git.Git`         | Yes      |
-| Python 3.12+ | Via uv (installed automatically) | Yes      |
-| Node.js 18+  | `winget install OpenJS.NodeJS`   | Yes      |
-| uv           | `pip install uv`                 | Yes      |
-| SurrealDB    | `scoop install surrealdb`        | Yes      |
+- Git
+- Python 3.12
+- uv
+- Node.js 22
+- PostgreSQL 17 with the pgvector extension
 
-## Quick Start
+PostgreSQL can run natively on Windows or in a local container. It must be reachable before the API or worker starts.
 
-1. **Clone and setup:**
+## Install
 
-   ```bash
-   cd %USERPROFILE%\Projects  # or your preferred location
-   git clone https://github.com/lfnovo/open-notebook.git
-   cd open-notebook
-   uv sync
-   cd frontend && npm install && cd ..
-   ```
-
-2. **Configure `.env`:**
-
-   - Copy `.env.example` to `.env`
-
-   - Add your API keys
-
-   - **CRITICAL:** Change `SURREAL_URL` from `localhost` to `127.0.0.1`:
-
-     ```env
-     SURREAL_URL="ws://127.0.0.1:8000/rpc"
-     ```
-
-3. **Start the four services**, each in its own terminal, from the `open-notebook` folder.
-
-   > Open Notebook does not ship a launcher script — start the services manually as below (or wrap them in your own `.bat`, see [Optional: one-click launcher](#optional-one-click-launcher)).
-
-   ```batch
-   REM Optional: point Open Notebook at a separate data folder (see Issue 4 below).
-   REM Set this in each terminal before running, or skip to use ./data.
-   set DATA_FOLDER=%USERPROFILE%\Projects\open-notebook-data
-
-   REM Terminal 1 — SurrealDB
-   surreal start --user root --pass root --bind 127.0.0.1:8000 rocksdb:%DATA_FOLDER%\surrealdb
-
-   REM Terminal 2 — API
-   uv run --env-file .env run_api.py
-
-   REM Terminal 3 — Worker (module form avoids the Windows "canonicalize" error, see Issue 3)
-   set PYTHONPATH=%CD%
-   uv run --env-file .env python -m surreal_commands.cli.worker --import-modules commands
-
-   REM Terminal 4 — Frontend
-   cd frontend && npm run dev
-   ```
-
-4. **Open the app:** http://127.0.0.1:3000
-
-## Directory Structure (Recommended)
-
-```
-YourProjectsFolder\
-├── open-notebook\           # Source code (git clone)
-│   ├── .venv\               # Python virtual environment (created by uv)
-│   ├── frontend\            # Next.js frontend
-│   ├── commands\            # Worker command modules
-│   └── .env                 # Your configuration
-├── open-notebook-data\      # Data storage (SEPARATE from code!)
-│   ├── surrealdb\           # Database files
-│   ├── uploads\             # Uploaded documents
-│   └── sqlite-db\           # LangGraph checkpoints
-└── start-open-notebook.bat  # Optional launcher you create yourself (see below)
-```
-
-**Why separate data folder?** Prevents accidental data loss when updating/reinstalling code.
-
-## Optional: one-click launcher
-
-Open Notebook does not ship a launcher, but you can save the following as
-`start-open-notebook.bat` (anywhere you like) to start all four services with a
-double-click. Adjust `ROOT` and `DATA_ROOT` to match your setup.
-
-```batch
-@echo off
-REM --- adjust these two paths ---
-set ROOT=%USERPROFILE%\Projects\open-notebook
-set DATA_ROOT=%USERPROFILE%\Projects\open-notebook-data
-
-set DATA_FOLDER=%DATA_ROOT%
-set PYTHONPATH=%ROOT%
-cd /d %ROOT%
-
-start "SurrealDB" surreal start --user root --pass root --bind 127.0.0.1:8000 rocksdb:%DATA_ROOT%\surrealdb
-start "API" cmd /k "uv run --env-file .env run_api.py"
-start "Worker" cmd /k "uv run --env-file .env python -m surreal_commands.cli.worker --import-modules commands"
-start "Frontend" cmd /k "cd /d %ROOT%\frontend && npm run dev"
-```
-
-Then open http://127.0.0.1:3000.
-
-## Critical Windows Fixes
-
-### Issue 1: Wrong Python Version
-
-**Symptom:**
-
-```
-ModuleNotFoundError: No module named 'langgraph.checkpoint.sqlite'
-```
-
-Traceback shows system Python (e.g., `C:\Python314\`) instead of venv.
-
-**Cause:** Windows may have multiple Python versions. The venv's `activate.bat` doesn't always override correctly.
-
-**Solution:** Use `uv run` instead of direct python calls:
-
-```batch
-REM Wrong:
-.venv\Scripts\python.exe run_api.py
-
-REM Correct:
-uv run python run_api.py
-```
-
-### Issue 2: Database Health Check Timeout
-
-**Symptom:**
-
-```
-WARNING: Database health check timed out after 2 seconds
-```
-
-Frontend shows "Database is offline" even though SurrealDB is running.
-
-**Cause:** `.env` uses `localhost` but SurrealDB binds to `127.0.0.1`.
-
-**Solution:** In `.env`, change:
-
-```env
-# Wrong:
-SURREAL_URL="ws://localhost:8000/rpc"
-
-# Correct:
-SURREAL_URL="ws://127.0.0.1:8000/rpc"
-```
-
-### Issue 3: Worker "Failed to canonicalize script path"
-
-**Symptom:**
-
-```
-Failed to canonicalize script path
-```
-
-**Cause:** The `surreal-commands-worker.exe` can't find the Python `commands` module.
-
-**Solution:** Use Python module invocation with PYTHONPATH:
-
-```batch
-set PYTHONPATH=%ROOT%
-uv run --env-file .env python -m surreal_commands.cli.worker --import-modules commands
-```
-
-### Issue 4: DATA_FOLDER Path Parsing Error
-
-**Symptom:**
-
-```
-warning: Failed to parse environment file .env at position X
-```
-
-**Cause:** `uv` can't parse Windows paths with backslashes in `.env`.
-
-**Solution:** Keep `DATA_FOLDER` **commented out** in `.env`. Set it via batch file:
-
-```batch
-set DATA_FOLDER=C:\path\to\open-notebook-data
-```
-
-## Configuration Files
-
-### Modifying `open_notebook/config.py`
-
-The default `config.py` uses a hardcoded data path. Modify it to read from environment:
-
-```python
-import os
-
-# ROOT DATA FOLDER - can be overridden via DATA_FOLDER environment variable
-DATA_FOLDER = os.environ.get("DATA_FOLDER", "./data")
-
-# Rest of file uses DATA_FOLDER...
-```
-
-### Required `.env` Settings
-
-```env
-# Database - MUST use 127.0.0.1!
-SURREAL_URL="ws://127.0.0.1:8000/rpc"
-SURREAL_USER="root"
-SURREAL_PASSWORD="root"
-SURREAL_NAMESPACE="open_notebook"
-SURREAL_DATABASE="open_notebook"
-
-# API Keys (uncomment and fill in)
-OPENAI_API_KEY=your-key-here
-ANTHROPIC_API_KEY=your-key-here
-GOOGLE_API_KEY=your-key-here
-```
-
-## Available AI Models
-
-Once running, add models in Settings. Common model names:
-
-| Provider  | Models                                                       |
-| --------- | ------------------------------------------------------------ |
-| OpenAI    | `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `text-embedding-3-small` |
-| Anthropic | `claude-sonnet-4-20250514`, `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022` |
-| Google    | `gemini-3.5-flash`, `gemini-2.5-flash`, `gemini-2.5-pro`     |
-| DeepSeek  | `deepseek-chat`, `deepseek-reasoner`                         |
-
-## Upgrading
-
-When a new version is released:
-
-```batch
+```powershell
+git clone https://github.com/lfnovo/open-notebook.git
 cd open-notebook
-git pull
 uv sync
-cd frontend && npm install && cd ..
+cd frontend
+npm install
+cd ..
 ```
 
-Then restart all services. Your `.env` and data are preserved.
+Copy `.env.example` to `.env` and set at least:
 
-## Services & Ports
+```dotenv
+OPEN_NOTEBOOK_ENCRYPTION_KEY=replace-with-a-long-random-secret
+DATABASE_URL=postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+POSTGRES_URL=postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+```
 
-| Service   | Port | URL                        |
-| --------- | ---- | -------------------------- |
-| SurrealDB | 8000 | ws://127.0.0.1:8000        |
-| API       | 5055 | http://127.0.0.1:5055/docs |
-| Frontend  | 3000 | http://127.0.0.1:3000      |
+The PostgreSQL database must provide the `vector` extension.
 
-## Troubleshooting
+## Start services
 
-### Services won't start
+Use separate terminals from the repository root.
 
-- Check if ports are in use: `netstat -ano | findstr :8000`
-- Kill existing processes: `taskkill /F /PID <pid>`
+### Terminal 1 — API
 
-### Frontend can't connect to API
+```powershell
+uv run --env-file .env run_api.py
+```
 
-- Verify API is running: http://127.0.0.1:5055/docs
-- Check `.env` has `API_URL=http://localhost:5055`
+### Terminal 2 — worker
 
-### Worker not processing commands
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
+uv run --env-file .env open-notebook-command-worker --import-modules commands --max-tasks 5
+```
 
-- Check Worker window for errors
-- Verify PYTHONPATH is set in startup script
+### Terminal 3 — frontend
 
-## Contributing
+```powershell
+cd frontend
+npm run dev
+```
 
-Found another Windows-specific issue? Please share your solution!
+Open:
 
----
+- UI: http://localhost:3000
+- API: http://localhost:5055
+- API docs: http://localhost:5055/docs
 
-*Tested on Windows 11 ARM64 with Open Notebook v1.6.0*
-*Created: January 2026*
+## PostgreSQL in Docker on Windows
+
+A convenient development database is:
+
+```powershell
+docker run -d --name open-notebook-postgres `
+  -e POSTGRES_USER=open_notebook `
+  -e POSTGRES_PASSWORD=open_notebook `
+  -e POSTGRES_DB=open_notebook `
+  -p 127.0.0.1:5432:5432 `
+  -v open_notebook_postgres:/var/lib/postgresql/data `
+  pgvector/pgvector:0.8.6-pg17-bookworm
+```
+
+Keep port 5432 bound to localhost for local development.
+
+## Common issues
+
+### Database health check fails
+
+Confirm PostgreSQL is listening and the DSN is correct:
+
+```powershell
+Test-NetConnection 127.0.0.1 -Port 5432
+```
+
+Then verify `DATABASE_URL` and `POSTGRES_URL` in `.env`. They should normally be identical.
+
+### Worker cannot import `commands`
+
+Set `PYTHONPATH` to the repository root before starting the worker:
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
+```
+
+### `DATA_FOLDER` path parsing
+
+If an environment-file parser rejects a Windows path, set it in the shell instead:
+
+```powershell
+$env:DATA_FOLDER = "$env:USERPROFILE\open-notebook-data"
+```
+
+## Provider configuration
+
+After startup, add provider credentials through **Settings → API Keys**, test the connection, discover models, and register the models you intend to use.
+
+See [Database Configuration](../5-CONFIGURATION/database.md) and [Environment Reference](../5-CONFIGURATION/environment-reference.md) for the current runtime configuration.

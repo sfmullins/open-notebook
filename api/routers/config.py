@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Request
 from loguru import logger
 
-from open_notebook.database.repository import repo_query
+from open_notebook.database.repository import repo_healthcheck
 from open_notebook.utils.version_utils import (
     compare_versions,
     get_version_from_github_async,
@@ -107,7 +107,7 @@ async def check_database_health() -> dict:
     """
     try:
         # 2-second timeout for database health check
-        result = await asyncio.wait_for(repo_query("RETURN 1"), timeout=2.0)
+        result = await asyncio.wait_for(repo_healthcheck(), timeout=2.0)
         if result:
             return {"status": "online"}
         return {"status": "offline", "error": "Empty result"}

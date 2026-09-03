@@ -157,7 +157,7 @@ docker compose logs api | grep "slow\|timeout"
 ### Reduce Load
 ```bash
 # In .env:
-SURREAL_COMMANDS_MAX_TASKS=2
+OPEN_NOTEBOOK_WORKER_MAX_TASKS=2
 API_CLIENT_TIMEOUT=600
 
 # Restart
@@ -236,9 +236,9 @@ docker compose restart
 ### Enable Retry Logic
 ```bash
 # In .env:
-SURREAL_COMMANDS_RETRY_ENABLED=true
-SURREAL_COMMANDS_RETRY_MAX_ATTEMPTS=5
-SURREAL_COMMANDS_RETRY_WAIT_STRATEGY=exponential_jitter
+# Retry/backoff is managed internally by the PostgreSQL command queue.
+# Retry/backoff is managed internally by the PostgreSQL command queue.
+# Retry/backoff is managed internally by the PostgreSQL command queue.
 
 # Restart
 docker compose restart
@@ -247,7 +247,7 @@ docker compose restart
 ### Reduce Concurrency
 ```bash
 # In .env:
-SURREAL_COMMANDS_MAX_TASKS=2
+OPEN_NOTEBOOK_WORKER_MAX_TASKS=2
 
 # Restart
 docker compose restart

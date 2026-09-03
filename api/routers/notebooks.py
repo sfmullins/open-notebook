@@ -204,9 +204,12 @@ async def get_notebook(notebook_id: str):
 async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
     try:
         notebook = await Notebook.get(notebook_id)
-        if notebook_update.name is not None: notebook.name = notebook_update.name
-        if notebook_update.description is not None: notebook.description = notebook_update.description
-        if notebook_update.archived is not None: notebook.archived = notebook_update.archived
+        if notebook_update.name is not None:
+            notebook.name = notebook_update.name
+        if notebook_update.description is not None:
+            notebook.description = notebook_update.description
+        if notebook_update.archived is not None:
+            notebook.archived = notebook_update.archived
         await notebook.save()
         nb_id = notebook.id or notebook_id
         return NotebookResponse(

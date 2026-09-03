@@ -38,4 +38,3 @@ class UniversalDetector:
 
 
 __all__ = ["UniversalDetector", "detect"]
-__version__ = "compat"

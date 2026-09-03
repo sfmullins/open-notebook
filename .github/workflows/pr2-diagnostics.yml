@@ -1,0 +1,74 @@
+name: PR2 diagnostics
+
+on:
+  push:
+    branches:
+      - fix/valt-runtime-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+      POSTGRES_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+      OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-test-key
+      UV_PYTHON: "3.11"
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg17-bookworm
+        env:
+          POSTGRES_USER: open_notebook
+          POSTGRES_PASSWORD: open_notebook
+          POSTGRES_DB: open_notebook
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U open_notebook -d open_notebook"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/valt-runtime-hardening
+          fetch-depth: 0
+      - name: Install pinned uv and backend dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check 'uv==0.12.9'
+          uv python install 3.11
+          uv sync --frozen --group dev
+      - name: Capture runtime boundary result
+        shell: bash
+        run: |
+          set +e
+          python3 scripts/check_no_surreal_runtime.py > PR2_BOUNDARY_DIAGNOSTIC.txt 2>&1
+          echo "exit_code=$?" >> PR2_BOUNDARY_DIAGNOSTIC.txt
+          exit 0
+      - name: Capture backend test failures
+        shell: bash
+        run: |
+          set +e
+          uv run pytest tests/ -q --tb=short > PR2_PYTEST_DIAGNOSTIC.txt 2>&1
+          echo "exit_code=$?" >> PR2_PYTEST_DIAGNOSTIC.txt
+          exit 0
+      - name: Capture npm audit
+        working-directory: frontend
+        shell: bash
+        run: |
+          set +e
+          npm ci
+          npm audit --json > ../PR2_NPM_AUDIT.json
+          echo $? > ../PR2_NPM_AUDIT_EXIT.txt
+          exit 0
+      - name: Remove diagnostic workflow and commit reports
+        run: |
+          rm .github/workflows/pr2-diagnostics.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: capture PR2 remediation diagnostics"
+          git push origin HEAD:fix/valt-runtime-hardening

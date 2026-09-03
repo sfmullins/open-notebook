@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: "3.11"
-  UV_PYTHON: "3.11"
+  PYTHON_VERSION: "3.12"
+  UV_PYTHON: "3.12"
   NODE_VERSION: "22"
 
 jobs:
@@ -59,6 +59,7 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0
         with:
+          version: "0.12.9"
           enable-cache: true
 
       - name: Install Python
@@ -88,9 +89,9 @@ jobs:
           if-no-files-found: ignore
 
   frontend:
-    name: Frontend quality and build
+    name: Frontend quality, security and build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: frontend
@@ -117,6 +118,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+
       - name: Upload frontend coverage
         if: always()
         uses: actions/upload-artifact@v4
@@ -124,6 +128,132 @@ jobs:
           name: frontend-coverage
           path: frontend/coverage/
           if-no-files-found: ignore
+
+  migration-parity:
+    name: SurrealDB to PostgreSQL migration parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+      POSTGRES_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+      OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-test-key
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg17-bookworm
+        env:
+          POSTGRES_USER: open_notebook
+          POSTGRES_PASSWORD: open_notebook
+          POSTGRES_DB: open_notebook
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U open_notebook -d open_notebook"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "0.12.9"
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install "$PYTHON_VERSION"
+
+      - name: Install locked runtime dependencies
+        run: uv sync --frozen
+
+      - name: Start pinned legacy SurrealDB fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name surreal-parity -p 127.0.0.1:8000:8000 \
+            surrealdb/surrealdb:v2.6.5 \
+            start --log info --user root --pass root memory
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs surreal-parity
+          exit 1
+
+      - name: Seed semantic migration fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/parity.surql <<'SQL'
+          CREATE notebook:parity SET name='Parity Notebook', description='migration fixture';
+          CREATE source:parity SET title='Parity Source', full_text='Fixture body';
+          RELATE source:parity->reference->notebook:parity SET role='primary';
+          CREATE source_embedding:parity SET source=source:parity, `order`=0, content='fixture chunk', embedding=[0.1,0.2,0.3];
+          CREATE note:parity SET title='Parity Note', content='note body', embedding=[0.4,0.5,0.6];
+          SQL
+          curl --fail --silent --show-error --user root:root \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: text/plain' \
+            -H 'surreal-ns: open_notebook' \
+            -H 'surreal-db: open_notebook' \
+            --data-binary @/tmp/parity.surql \
+            http://127.0.0.1:8000/sql | tee /tmp/seed-result.json
+          python3 - <<'PY'
+          import json
+          payload = json.load(open('/tmp/seed-result.json', encoding='utf-8'))
+          assert payload and all(item.get('status') == 'OK' for item in payload), payload
+          PY
+
+      - name: Run production migration
+        run: >-
+          uv run python scripts/migrate_surreal_to_postgres.py
+          --surreal-url http://127.0.0.1:8000
+          --surreal-user root
+          --surreal-password root
+          --surreal-namespace open_notebook
+          --surreal-database open_notebook
+
+      - name: Assert semantic parity and non-empty guard
+        run: uv run python tests/integration/check_surreal_postgres_parity.py
+
+      - name: Stop legacy fixture
+        if: always()
+        run: docker rm -f surreal-parity || true
+
+  image-sbom:
+    name: Runtime image SBOM and licence policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build final runtime image
+        run: docker build --target runtime -t open-notebook:ci .
+
+      - name: Generate full-image SBOM with pinned Syft 1.51.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/out" \
+            anchore/syft:v1.51.0 \
+            docker:open-notebook:ci -o syft-json=/out/sbom.syft.json
+
+      - name: Enforce full-image licence policy
+        run: python3 scripts/check_sbom_licenses.py sbom.syft.json
+
+      - name: Upload runtime SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-sbom
+          path: sbom.syft.json
+          if-no-files-found: error
 
   docs:
     name: Documentation links

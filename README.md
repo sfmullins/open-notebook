@@ -94,112 +94,66 @@ Learn more about our project at [https://www.open-notebook.ai](https://www.open-
 
 ### Built With
 
-[![Python][Python]][Python-url] [![Next.js][Next.js]][Next-url] [![React][React]][React-url] [![SurrealDB][SurrealDB]][SurrealDB-url] [![LangChain][LangChain]][LangChain-url]
+[![Python][Python]][Python-url] [![Next.js][Next.js]][Next-url] [![React][React]][React-url] [![PostgreSQL][PostgreSQL]][PostgreSQL-url] [![LangChain][LangChain]][LangChain-url]
 
-## 🚀 Quick Start (2 Minutes)
+## 🚀 Quick Start
 
 ### Prerequisites
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed
-- That's it! (API keys configured later in the UI)
 
-### Step 1: Get docker-compose.yml
+- Docker Desktop / Docker Engine with Compose support
+- Git
+- API keys are configured later in the UI
 
-**Option A:** Download directly
+### Step 1: Clone and configure
+
 ```bash
-curl -o docker-compose.yml https://raw.githubusercontent.com/lfnovo/open-notebook/main/docker-compose.yml
+git clone https://github.com/lfnovo/open-notebook.git
+cd open-notebook
+cp .env.example .env
 ```
 
-**Option B:** Create the file manually
-Copy this into a new file called `docker-compose.yml`:
+Set strong local values in `.env` for at least:
 
-```yaml
-services:
-  surrealdb:
-    image: surrealdb/surrealdb:v2
-    # Credentials default to root:root for a zero-config local setup. Before
-    # exposing this instance to a network, set SURREAL_USER / SURREAL_PASSWORD
-    # in a .env file (see .env.example) — they are applied here and to the
-    # open_notebook service below, so the two always stay in sync.
-    # List (exec) form so each interpolated value stays a single argument —
-    # a password containing spaces would otherwise be split into several.
-    command: ["start", "--log", "info", "--user", "${SURREAL_USER:-root}", "--pass", "${SURREAL_PASSWORD:-root}", "rocksdb:/mydata/mydatabase.db"]
-    user: root  # Required for bind mounts on Linux
-    ports:
-      # Bound to localhost only: the open_notebook service reaches this over
-      # the internal compose network regardless, so the host port is purely
-      # for local debugging (e.g. Surrealist, `surreal sql`). Exposing this
-      # on 0.0.0.0 would let anyone who can reach the host connect with the
-      # default root:root credentials.
-      - "127.0.0.1:8000:8000"
-    volumes:
-      - ./surreal_data:/mydata
-    environment:
-      - SURREAL_EXPERIMENTAL_GRAPHQL=true
-    restart: always
-    pull_policy: always
-
-  open_notebook:
-    image: lfnovo/open_notebook:v1-latest
-    ports:
-      - "8502:8502"  # Web UI
-      - "5055:5055"  # REST API
-    environment:
-      # REQUIRED: Change this to your own secret string
-      # This encrypts your API keys in the database
-      - OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
-
-      # Database connection. SURREAL_USER / SURREAL_PASSWORD default to root:root
-      # for local use; override them in a .env file before exposing the instance
-      # (the same values configure the surrealdb service above).
-      - SURREAL_URL=ws://surrealdb:8000/rpc
-      - SURREAL_USER=${SURREAL_USER:-root}
-      - SURREAL_PASSWORD=${SURREAL_PASSWORD:-root}
-      - SURREAL_NAMESPACE=open_notebook
-      - SURREAL_DATABASE=open_notebook
-    volumes:
-      - ./notebook_data:/app/data
-    depends_on:
-      - surrealdb
-    restart: always
-    pull_policy: always
+```dotenv
+POSTGRES_USER=open_notebook
+POSTGRES_PASSWORD=replace-with-a-strong-database-password
+POSTGRES_DB=open_notebook
+OPEN_NOTEBOOK_ENCRYPTION_KEY=replace-with-a-long-secret
 ```
 
-### Step 2: Set Your Encryption Key
-Edit `docker-compose.yml` and change this line:
-```yaml
-- OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
-```
-to any secret value (e.g., `my-super-secret-key-123`)
+The repository `docker-compose.yml` runs PostgreSQL + pgvector as a separate persistent service and builds the application runtime against it. PostgreSQL is the only runtime database.
 
-### Step 3: Start Services
+### Step 2: Start services
+
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-Wait 15-20 seconds, then open: **http://localhost:8502**
+Check startup:
 
-### Step 4: Configure AI Provider
-1. Go to **Models** and choose your provider (OpenAI, Anthropic, Google, etc.)
-2. Click **+ Add Configuration**
-3. Paste your API key and other info as needed and click **Add Configuration**
-4. Click **Test** to test connection
-5. Click **Sync Models** and check models to include
-6. Under **Default Model Assignments**, click **Auto-Assign Defaults** or manually specify which models to use for what 
+```bash
+docker compose ps
+docker compose logs -f open_notebook
+```
 
-Done! You're ready to create your first notebook.
+Then open **http://localhost:8502**. The REST API is available on **http://localhost:5055**.
 
-> **Need an API key?** Get one from:
-> [OpenAI](https://platform.openai.com/api-keys) · [Anthropic](https://console.anthropic.com/) · [Google](https://aistudio.google.com/) · [Groq](https://console.groq.com/) (free tier)
+### Step 3: Configure an AI provider
 
-> **Want free local AI?** See [examples/docker-compose-ollama.yml](examples/) for Ollama setup
+1. Open **Settings / API Keys**.
+2. Add the provider you want to use.
+3. Save and test the credential.
+4. Discover/register models and assign defaults.
 
----
+For fully local inference, configure a separately managed Ollama or compatible OpenAI-style endpoint.
+
+> Existing installations from the previous database architecture must use the one-time migration utility before retiring the old store. See [Local Development Setup](docs/7-DEVELOPMENT/development-setup.md#one-time-migration-from-a-legacy-data-store).
 
 ### 📚 More Installation Options
 
-- **[With Ollama (Free Local AI)](examples/docker-compose-ollama.yml)** - Run models locally without API costs
-- **[From Source (Developers)](docs/1-INSTALLATION/from-source.md)** - For development and contributions
-- **[Complete Installation Guide](docs/1-INSTALLATION/index.md)** - All deployment scenarios
+- **[Docker Compose](docs/1-INSTALLATION/docker-compose.md)** - Supported packaged topology with PostgreSQL + pgvector
+- **[From Source](docs/1-INSTALLATION/from-source.md)** - Native developer/contributor setup
+- **[Complete Installation Guide](docs/1-INSTALLATION/index.md)** - Supported deployment routes
 
 ---
 
@@ -346,7 +300,7 @@ We welcome contributions! We're especially looking for help with:
 - **Feature Development**: Build the coolest research tool together
 - **Documentation**: Improve guides and tutorials
 
-**Current Tech Stack**: Python, FastAPI, Next.js, React, SurrealDB
+**Current Tech Stack**: Python, FastAPI, Next.js, React, PostgreSQL + pgvector
 **Future Roadmap**: Real-time updates, enhanced async processing
 
 See our [Contributing Guide](CONTRIBUTING.md) for detailed information on how to get started, including our guidelines for [AI-assisted contributions](docs/7-DEVELOPMENT/contributing.md#ai-assisted-and-agent-generated-prs). To understand what we're building (and what we'll say no to), read [VISION.md](VISION.md).
@@ -392,5 +346,5 @@ Open Notebook is MIT licensed. See the [LICENSE](LICENSE) file for details.
 [Python-url]: https://www.python.org/
 [LangChain]: https://img.shields.io/badge/LangChain-3A3A3A?style=for-the-badge&logo=chainlink&logoColor=white
 [LangChain-url]: https://www.langchain.com/
-[SurrealDB]: https://img.shields.io/badge/SurrealDB-FF5E00?style=for-the-badge&logo=databricks&logoColor=white
-[SurrealDB-url]: https://surrealdb.com/
+[PostgreSQL]: https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white
+[PostgreSQL-url]: https://www.postgresql.org/

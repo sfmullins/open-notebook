@@ -1,10 +1,10 @@
 from typing import List
 
-import pycountry
 from babel import Locale
 from babel.core import get_global
 from fastapi import APIRouter
 from pydantic import BaseModel
+import pycountry
 
 router = APIRouter()
 

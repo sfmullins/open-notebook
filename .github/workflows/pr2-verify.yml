@@ -18,6 +18,29 @@ env:
   NODE_VERSION: "22"
 
 jobs:
+  readme-remediation:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/valt-runtime-hardening
+          fetch-depth: 0
+      - name: Apply staged README patch if present
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f PR2_readme_patch.py ]; then
+            exit 0
+          fi
+          python3 PR2_readme_patch.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A README.md PR2_readme_patch.py
+          git commit -m "docs: replace README legacy database quick start"
+          git push origin HEAD:fix/valt-runtime-hardening
+
   boundary:
     runs-on: ubuntu-latest
     steps:

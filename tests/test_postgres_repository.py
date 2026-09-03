@@ -6,7 +6,12 @@ import pytest
 
 from open_notebook.database.postgres import db_connection, ensure_schema
 from open_notebook.database.record_id import RecordID
-from open_notebook.database.repository import repo_query, repo_relate, repo_upsert
+from open_notebook.database.repository import (
+    repo_get,
+    repo_relate,
+    repo_relations,
+    repo_upsert,
+)
 
 
 async def _reset_store() -> None:
@@ -39,15 +44,13 @@ async def test_singleton_upsert_preserves_explicit_record_id() -> None:
     )
 
     assert result[0]["id"] == "open_notebook:default_models"
-    loaded = await repo_query(
-        "SELECT * FROM ONLY $record_id",
-        {"record_id": RecordID.parse("open_notebook:default_models")},
-    )
-    assert loaded[0]["default_chat_model"] == "model:chat"
+    loaded = await repo_get("open_notebook:default_models")
+    assert loaded is not None
+    assert loaded["default_chat_model"] == "model:chat"
 
 
 @pytest.mark.asyncio
-async def test_relation_direction_matches_legacy_in_out_contract() -> None:
+async def test_relation_direction_and_idempotency() -> None:
     await _reset_store()
     await repo_upsert("source", "source:s1", {"title": "Source"})
     await repo_upsert("notebook", "notebook:n1", {"name": "Notebook"})
@@ -55,17 +58,14 @@ async def test_relation_direction_matches_legacy_in_out_contract() -> None:
     first = await repo_relate("source:s1", "reference", "notebook:n1")
     second = await repo_relate("source:s1", "reference", "notebook:n1")
 
-    # Upsert semantics make linking idempotent.
     assert first[0]["in"] == "source:s1"
     assert first[0]["out"] == "notebook:n1"
     assert second[0]["in"] == "source:s1"
     assert second[0]["out"] == "notebook:n1"
 
-    rows = await repo_query(
-        "SELECT * FROM reference WHERE in = $source AND out = $notebook",
-        {
-            "source": RecordID.parse("source:s1"),
-            "notebook": RecordID.parse("notebook:n1"),
-        },
+    rows = await repo_relations(
+        "reference", source="source:s1", target="notebook:n1"
     )
     assert len(rows) == 1
+    assert rows[0]["in"] == "source:s1"
+    assert rows[0]["out"] == "notebook:n1"

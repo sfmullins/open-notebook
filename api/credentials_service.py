@@ -719,15 +719,15 @@ async def register_models(credential_id: str, models_data: list) -> dict:
     cred = await Credential.get(credential_id)
 
     from open_notebook.ai.models import Model
-    from open_notebook.database.repository import repo_query
+    from open_notebook.database.repository import repo_list
 
     # Batch fetch existing models for this provider
-    existing_models = await repo_query(
-        "SELECT string::lowercase(name) as name, string::lowercase(type) as type FROM model "
-        "WHERE string::lowercase(provider) = $provider",
-        {"provider": cred.provider.lower()},
+    existing_models = await repo_list(
+        "model",
+        filters={"provider": cred.provider},
+        case_insensitive_fields={"provider"},
     )
-    existing_keys = {(m["name"], m["type"]) for m in existing_models}
+    existing_keys = {(str(m.get("name", "")).lower(), str(m.get("type", "")).lower()) for m in existing_models}
 
     created = 0
     existing = 0
@@ -813,12 +813,15 @@ async def migrate_from_provider_config() -> dict:
 
                 # Link existing models for this provider to the new credential
                 from open_notebook.ai.models import Model
-                from open_notebook.database.repository import repo_query
+                from open_notebook.database.repository import repo_list
 
-                provider_models = await repo_query(
-                    "SELECT * FROM model WHERE string::lowercase(provider) = $provider AND credential IS NONE",
-                    {"provider": provider.lower()},
+                provider_models = await repo_list(
+                    "model",
+                    filters={"provider": provider},
+                    case_insensitive_fields={"provider"},
+                    non_null_fields=(),
                 )
+                provider_models = [row for row in provider_models if row.get("credential") is None]
                 if provider_models:
                     logger.info(
                         f"[{provider}/{old_cred.name}] Linking {len(provider_models)} "
@@ -874,7 +877,7 @@ async def migrate_from_env() -> dict:
     logger.info("Encryption key verified")
 
     from open_notebook.ai.models import Model
-    from open_notebook.database.repository import repo_query
+    from open_notebook.database.repository import repo_list
 
     migrated = []
     skipped = []
@@ -904,10 +907,12 @@ async def migrate_from_env() -> dict:
             logger.info(f"[{provider}] Credential saved successfully (id={cred.id})")
 
             # Link unassigned models to this credential
-            provider_models = await repo_query(
-                "SELECT * FROM model WHERE string::lowercase(provider) = $provider AND credential IS NONE",
-                {"provider": provider.lower()},
+            provider_models = await repo_list(
+                "model",
+                filters={"provider": provider},
+                case_insensitive_fields={"provider"},
             )
+            provider_models = [row for row in provider_models if row.get("credential") is None]
             if provider_models:
                 logger.info(
                     f"[{provider}] Linking {len(provider_models)} unassigned model(s) "

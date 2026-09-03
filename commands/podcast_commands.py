@@ -6,7 +6,7 @@ from typing import Optional
 from loguru import logger
 
 from open_notebook.config import PODCASTS_FOLDER
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repository import ensure_record_id, repo_list
 from open_notebook.podcasts.audio_paths import to_relative_audio_path
 from open_notebook.podcasts.models import (
     EpisodeProfile,
@@ -143,8 +143,8 @@ async def generate_podcast_command(
         )
 
         # 4. Load all profiles and configure podcast-creator
-        episode_profiles = await repo_query("SELECT * FROM episode_profile")
-        speaker_profiles = await repo_query("SELECT * FROM speaker_profile")
+        episode_profiles = await repo_list("episode_profile")
+        speaker_profiles = await repo_list("speaker_profile")
 
         # Transform the surrealdb array into a dictionary for podcast-creator
         episode_profiles_dict = {

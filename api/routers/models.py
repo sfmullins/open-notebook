@@ -215,15 +215,17 @@ async def create_model(model_data: ModelCreate):
             )
 
         # Check for duplicate model name under the same provider and type (case-insensitive)
-        from open_notebook.database.repository import repo_query
+        from open_notebook.database.repository import repo_list
 
-        existing = await repo_query(
-            "SELECT * FROM model WHERE string::lowercase(provider) = $provider AND string::lowercase(name) = $name AND string::lowercase(type) = $type LIMIT 1",
-            {
-                "provider": model_data.provider.lower(),
-                "name": model_data.name.lower(),
-                "type": model_data.type.lower(),
+        existing = await repo_list(
+            "model",
+            filters={
+                "provider": model_data.provider,
+                "name": model_data.name,
+                "type": model_data.type,
             },
+            case_insensitive_fields={"provider", "name", "type"},
+            limit=1,
         )
         if existing:
             raise HTTPException(
@@ -674,12 +676,10 @@ async def get_models_by_provider(provider: str):
     Returns models from the database that belong to the specified provider.
     """
     try:
-        from open_notebook.database.repository import repo_query
+        from open_notebook.database.repository import repo_list
 
-        models = await repo_query(
-            "SELECT * FROM model WHERE provider = $provider ORDER BY type, name",
-            {"provider": provider},
-        )
+        models = await repo_list("model", filters={"provider": provider}, order_by="type")
+        models.sort(key=lambda row: (row.get("type", ""), row.get("name", "")))
 
         return [
             ModelResponse(
@@ -764,16 +764,14 @@ async def auto_assign_defaults():
         - missing: List of slots with no available models
     """
     try:
-        from open_notebook.database.repository import repo_query
+        from open_notebook.database.repository import repo_list
 
         # Get current defaults
         defaults = await DefaultModels.get_instance()
 
         # Get all models grouped by type
-        all_models = await repo_query(
-            "SELECT * FROM model ORDER BY provider, name",
-            {},
-        )
+        all_models = await repo_list("model")
+        all_models.sort(key=lambda row: (row.get("provider", ""), row.get("name", "")))
 
         # Group models by type
         models_by_type: Dict[str, List[Dict]] = {

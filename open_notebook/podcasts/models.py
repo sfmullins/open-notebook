@@ -4,7 +4,12 @@ from loguru import logger
 from pydantic import ConfigDict, Field, field_validator
 
 from open_notebook.database.record_id import RecordID
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repository import (
+    ensure_record_id,
+    repo_command_rows,
+    repo_get,
+    repo_list,
+)
 from open_notebook.domain.base import ObjectModel
 
 
@@ -118,9 +123,7 @@ class EpisodeProfile(ObjectModel):
     @classmethod
     async def get_by_name(cls, name: str) -> Optional["EpisodeProfile"]:
         """Get episode profile by name"""
-        result = await repo_query(
-            "SELECT * FROM episode_profile WHERE name = $name", {"name": name}
-        )
+        result = await repo_list("episode_profile", filters={"name": name}, limit=1)
         if result:
             return cls(**result[0])
         return None
@@ -186,9 +189,7 @@ class SpeakerProfile(ObjectModel):
     @classmethod
     async def get_by_name(cls, name: str) -> Optional["SpeakerProfile"]:
         """Get speaker profile by name"""
-        result = await repo_query(
-            "SELECT * FROM speaker_profile WHERE name = $name", {"name": name}
-        )
+        result = await repo_list("speaker_profile", filters={"name": name}, limit=1)
         if result:
             return cls(**result[0])
         return None
@@ -206,11 +207,9 @@ class SpeakerProfile(ObjectModel):
         """
         ref_str = str(ref)
         if ref_str.startswith(f"{cls.table_name}:"):
-            result = await repo_query(
-                "SELECT * FROM $id", {"id": ensure_record_id(ref_str)}
-            )
+            result = await repo_get(ref_str)
             if result:
-                return cls(**result[0])
+                return cls(**result)
             return None
         return await cls.get_by_name(ref_str)
 
@@ -293,7 +292,7 @@ class PodcastEpisode(ObjectModel):
         against the `command` table (no connection pooling in the repository
         layer, see docs/7-DEVELOPMENT/architecture.md) - O(n) queries for n
         episodes. command_queue has no batch lookup, but its command table
-        lives in the same database (same SURREAL_* env vars), so this queries
+        lives in the same database (same PostgreSQL database), so this queries
         it directly in one shot instead of looping through the library's
         per-command helper.
 
@@ -307,10 +306,7 @@ class PodcastEpisode(ObjectModel):
         if not ids:
             return grouped
         try:
-            result = await repo_query(
-                "SELECT * FROM command WHERE id IN $command_ids",
-                {"command_ids": [ensure_record_id(cid) for cid in ids]},
-            )
+            result = await repo_command_rows(ids)
         except Exception as e:
             logger.error(f"Error batch-fetching command status: {e}")
             return grouped

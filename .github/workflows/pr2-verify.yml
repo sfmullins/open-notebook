@@ -51,8 +51,10 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/pr2_type_fix.py
-          python3 PR2_test_migration.py
-          rm PR2_test_migration.py scripts/pr2_type_fix.py
+          mkdir -p .pr2-tmp
+          cp PR2_test_migration.py .pr2-tmp/PR2_test_migration.py
+          python3 .pr2-tmp/PR2_test_migration.py
+          rm -rf .pr2-tmp PR2_test_migration.py scripts/pr2_type_fix.py
           if grep -R --line-number --include='*.py' 'repo_query' tests; then
             echo 'stale repo_query compatibility reference remains in tests' >&2
             exit 1

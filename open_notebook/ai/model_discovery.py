@@ -16,7 +16,7 @@ from loguru import logger
 from open_notebook.ai.connection_tester import normalize_anthropic_compatible_base_url
 from open_notebook.ai.models import Model
 from open_notebook.ai.provider_registry import PROVIDERS
-from open_notebook.database.repository import repo_query
+from open_notebook.database.repository import repo_list
 from open_notebook.domain.credential import Credential
 from open_notebook.utils.url_validation import prepare_pinned_http_target
 
@@ -931,10 +931,10 @@ async def sync_provider_models(
 
     # Batch fetch existing models to avoid N+1 query pattern
     try:
-        existing_models = await repo_query(
-            "SELECT string::lowercase(name) as name, string::lowercase(type) as type FROM model "
-            "WHERE string::lowercase(provider) = $provider",
-            {"provider": provider.lower()},
+        existing_models = await repo_list(
+            "model",
+            filters={"provider": provider},
+            case_insensitive_fields={"provider"},
         )
         # Create a set of (name, type) tuples for O(1) lookup
         existing_keys = set()
@@ -1011,10 +1011,18 @@ async def get_provider_model_count(provider: str) -> Dict[str, int]:
         Dict mapping model type to count
     """
     # Use case-insensitive comparison by lowercasing the provider
-    result = await repo_query(
-        "SELECT type, count() as count FROM model WHERE string::lowercase(provider) = string::lowercase($provider) GROUP BY type",
-        {"provider": provider},
+    rows = await repo_list(
+        "model",
+        filters={"provider": provider},
+        case_insensitive_fields={"provider"},
     )
+    result = []
+    grouped: Dict[str, int] = {}
+    for row in rows:
+        model_type = row.get("type")
+        if model_type:
+            grouped[model_type] = grouped.get(model_type, 0) + 1
+    result = [{"type": key, "count": value} for key, value in grouped.items()]
 
     counts = {
         "language": 0,

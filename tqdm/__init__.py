@@ -83,5 +83,11 @@ def trange(*args: int, **kwargs: Any) -> tqdm[int]:
     return tqdm(range(*args), **kwargs)
 
 
-__all__ = ["tqdm", "trange"]
+# Proglog imports this legacy name even when notebook rendering is not used.
+# The runtime is deliberately non-interactive, so the standard no-op progress
+# implementation is the correct compatibility target.
+tqdm_notebook = tqdm
+
+
+__all__ = ["tqdm", "tqdm_notebook", "trange"]
 __version__ = "compat"

@@ -89,16 +89,23 @@ async def postgres_is_empty() -> bool:
         if relation_row is None:
             raise RuntimeError("Could not count PostgreSQL relations")
         relation_count = relation_row["n"]
-        embedding_row = await (
+        source_embedding_row = await (
             await connection.execute("SELECT count(*) AS n FROM source_embedding_pg")
         ).fetchone()
-        if embedding_row is None:
+        if source_embedding_row is None:
             raise RuntimeError("Could not count PostgreSQL source embeddings")
-        source_embedding_count = embedding_row["n"]
+        source_embedding_count = source_embedding_row["n"]
+        record_embedding_row = await (
+            await connection.execute("SELECT count(*) AS n FROM record_embedding_pg")
+        ).fetchone()
+        if record_embedding_row is None:
+            raise RuntimeError("Could not count PostgreSQL record embeddings")
+        record_embedding_count = record_embedding_row["n"]
     return (
         int(record_count) == 0
         and int(relation_count) == 0
         and int(source_embedding_count) == 0
+        and int(record_embedding_count) == 0
     )
 
 

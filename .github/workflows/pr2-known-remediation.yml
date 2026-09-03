@@ -1,0 +1,57 @@
+name: PR2 known remediation
+
+on:
+  push:
+    branches:
+      - fix/valt-runtime-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/valt-runtime-hardening
+          fetch-depth: 0
+      - name: Apply consolidated remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/pr2_known_remediation.py
+          python3 -m compileall -q commands/podcast_commands.py scripts/check_no_surreal_runtime.py
+          python3 scripts/check_no_surreal_runtime.py
+      - name: Install locked Python runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'uv==0.12.9'
+          uv sync --frozen --no-dev
+      - name: Prove FFmpeg is feature-local
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGEIO_FFMPEG_EXE=/definitely/missing/ffmpeg .venv/bin/python - <<'PY'
+          import api.main
+          import commands.podcast_commands as podcasts
+          try:
+              podcasts._load_podcast_creator()
+          except RuntimeError as exc:
+              text = str(exc)
+              assert "externally installed FFmpeg" in text, text
+          else:
+              raise AssertionError("podcast runtime unexpectedly loaded without external FFmpeg")
+          print("application import is independent of FFmpeg; podcast runtime fails explicitly")
+          PY
+      - name: Commit remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(runtime): finalize PostgreSQL and external FFmpeg boundaries"
+          git push origin HEAD:fix/valt-runtime-hardening

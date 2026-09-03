@@ -1,4 +1,4 @@
-# PR2 residue inventory
+# PR2 current residue
 
 ## repo_query
 ./tests/test_podcast_episode_model_resolution.py:88:            "open_notebook.ai.models.repo_query", new=AsyncMock()
@@ -102,100 +102,15 @@
 ./docs/7-DEVELOPMENT/code-standards.md:254:    return await repo_query(
 ./docs/7-DEVELOPMENT/code-standards.md:324:    notebook_data = await repo_query(
 ./docs/7-DEVELOPMENT/code-standards.md:331:    sources_data = await repo_query(
-./api/routers/embedding_rebuild.py:12:from open_notebook.database.repository import repo_query
-./api/routers/embedding_rebuild.py:44:                result = await repo_query(
-./api/routers/embedding_rebuild.py:55:                result = await repo_query(
-./api/routers/embedding_rebuild.py:66:                result = await repo_query(
-./api/routers/embedding_rebuild.py:70:                result = await repo_query(
-./api/routers/embedding_rebuild.py:81:                result = await repo_query(
-./api/routers/embedding_rebuild.py:85:                result = await repo_query(
-./api/routers/chat.py:16:from open_notebook.database.repository import ensure_record_id, repo_query
-./api/routers/chat.py:202:        notebook_query = await repo_query(
-./api/routers/chat.py:254:        notebook_query = await repo_query(
-./api/routers/chat.py:312:        notebook_query = await repo_query(
-./api/routers/credentials.py:58:from open_notebook.database.repository import ensure_record_id, repo_delete, repo_query
-./api/routers/credentials.py:331:            linked = await repo_query(
-./api/routers/credentials.py:343:                        await repo_query(
-./api/routers/models.py:218:        from open_notebook.database.repository import repo_query
-./api/routers/models.py:220:        existing = await repo_query(
-./api/routers/models.py:677:        from open_notebook.database.repository import repo_query
-./api/routers/models.py:679:        models = await repo_query(
-./api/routers/models.py:767:        from open_notebook.database.repository import repo_query
-./api/routers/models.py:773:        all_models = await repo_query(
-./api/routers/config.py:10:from open_notebook.database.repository import repo_query
-./api/routers/config.py:110:        result = await asyncio.wait_for(repo_query("RETURN 1"), timeout=2.0)
 ./api/routers/sources.py:35:from open_notebook.database.repository import ensure_record_id, repo_query
 ./api/routers/sources.py:109:        await repo_query(
 ./api/routers/sources.py:317:        result = await repo_query(query, params)
 ./api/routers/sources.py:779:        notebooks_query = await repo_query(
 ./api/routers/sources.py:962:        references = await repo_query(
-./api/routers/notebooks.py:14:from open_notebook.database.repository import ensure_record_id, repo_query
-./api/routers/notebooks.py:33:        await repo_query(
-./api/routers/notebooks.py:102:        result = await repo_query(query)
-./api/routers/notebooks.py:171:        notebooks = await repo_query(
-./api/routers/notebooks.py:181:        sources = await repo_query(
-./api/routers/notebooks.py:253:        result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
-./api/routers/notebooks.py:305:        result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
-./api/routers/notebooks.py:355:        existing_ref = await repo_query(
-./api/routers/notebooks.py:365:            await repo_query(
-./api/routers/notebooks.py:397:        await repo_query(
-./api/routers/source_chat.py:19:from open_notebook.database.repository import ensure_record_id, repo_query
-./api/routers/source_chat.py:137:        relations = await repo_query(
-./api/routers/source_chat.py:148:                session_result = await repo_query(
-./api/routers/_chat_shared.py:20:from open_notebook.database.repository import ensure_record_id, repo_query
-./api/routers/_chat_shared.py:69:    relation_query = await repo_query(
-./api/credentials_service.py:722:    from open_notebook.database.repository import repo_query
-./api/credentials_service.py:725:    existing_models = await repo_query(
-./api/credentials_service.py:816:                from open_notebook.database.repository import repo_query
-./api/credentials_service.py:818:                provider_models = await repo_query(
-./api/credentials_service.py:877:    from open_notebook.database.repository import repo_query
-./api/credentials_service.py:907:            provider_models = await repo_query(
-./commands/podcast_commands.py:9:from open_notebook.database.repository import ensure_record_id, repo_query
-./commands/podcast_commands.py:146:        episode_profiles = await repo_query("SELECT * FROM episode_profile")
-./commands/podcast_commands.py:147:        speaker_profiles = await repo_query("SELECT * FROM speaker_profile")
-./commands/embedding_commands.py:16:from open_notebook.database.repository import ensure_record_id, repo_insert, repo_query
-./commands/embedding_commands.py:126:    await repo_query(
-./commands/embedding_commands.py:336:        await repo_query(
-./commands/embedding_commands.py:436:        result = await repo_query(
-./commands/embedding_commands.py:518:            result = await repo_query(
-./commands/embedding_commands.py:534:            result = await repo_query(
-./commands/embedding_commands.py:544:            result = await repo_query(
-./commands/embedding_commands.py:549:            result = await repo_query(
-./commands/embedding_commands.py:559:            result = await repo_query(
-./commands/embedding_commands.py:564:            result = await repo_query(
-./open_notebook/domain/notebook.py:10:from open_notebook.database.repository import ensure_record_id, repo_query
-./open_notebook/domain/notebook.py:33:            srcs = await repo_query(
-./open_notebook/domain/notebook.py:55:            srcs = await repo_query(
-./open_notebook/domain/notebook.py:138:            srcs = await repo_query(
-./open_notebook/domain/notebook.py:174:            note_result = await repo_query(
-./open_notebook/domain/notebook.py:183:            source_counts = await repo_query(
-./open_notebook/domain/notebook.py:241:            await repo_query(
-./open_notebook/domain/notebook.py:250:                source_counts = await repo_query(
-./open_notebook/domain/notebook.py:276:                source_result = await repo_query(
-./open_notebook/domain/notebook.py:283:            await repo_query(
-./open_notebook/domain/notebook.py:329:            src = await repo_query(
-./open_notebook/domain/notebook.py:363:            result = await repo_query(
-./open_notebook/domain/notebook.py:378:            src = await repo_query(
-./open_notebook/domain/notebook.py:498:            result = await repo_query(
-./open_notebook/domain/notebook.py:514:            result = await repo_query(
-./open_notebook/domain/notebook.py:664:            await repo_query(
-./open_notebook/domain/notebook.py:668:            await repo_query(
-./open_notebook/domain/notebook.py:773:        search_results = await repo_query(
-./open_notebook/domain/notebook.py:823:        search_results = await repo_query(
-./open_notebook/ai/model_discovery.py:19:from open_notebook.database.repository import repo_query
-./open_notebook/ai/model_discovery.py:934:        existing_models = await repo_query(
-./open_notebook/ai/model_discovery.py:1014:    result = await repo_query(
-./open_notebook/podcasts/models.py:7:from open_notebook.database.repository import ensure_record_id, repo_query
-./open_notebook/podcasts/models.py:121:        result = await repo_query(
-./open_notebook/podcasts/models.py:189:        result = await repo_query(
-./open_notebook/podcasts/models.py:209:            result = await repo_query(
-./open_notebook/podcasts/models.py:310:            result = await repo_query(
 
 ## legacy_query_compat
 
 ## surreal_commands
-
-## surreal-commands
 
 ## SURREAL_
 ./examples/docker-compose-single.yml:15:      - SURREAL_URL=ws://localhost:8000/rpc
@@ -375,11 +290,6 @@
 ./CHANGELOG.md:155:- `docker-compose.yml` now sources the SurrealDB credentials from `SURREAL_USER` / `SURREAL_PASSWORD` (applied to both the database server and the app), defaulting to `root:root` so the zero-config quick start is unchanged. Set them in a `.env` file to use your own credentials before exposing the instance; `.env.example` and the compose file note this (#946)
 ./.claude/skills/release/runbook.md:28:# 1. Find which SurrealDB instance dev actually uses — read SURREAL_URL in .env
 ./.claude/skills/release/runbook.md:30:#    be it), and note SURREAL_DATABASE.
-./open_notebook/utils/proxy.py:49:    ``SURREAL_URL`` wins, otherwise the legacy ``SURREAL_ADDRESS``. Returns the
-./open_notebook/utils/proxy.py:55:    candidate = os.environ.get("SURREAL_URL", "").strip()
-./open_notebook/utils/proxy.py:57:        candidate = os.environ.get("SURREAL_ADDRESS", "").strip()
-./open_notebook/utils/proxy.py:62:    # one for bare ``host`` / ``host:port`` values (e.g. SURREAL_ADDRESS).
-./open_notebook/podcasts/models.py:296:        lives in the same database (same SURREAL_* env vars), so this queries
 
 ## asciidoc
 ./uv.lock:187:name = "asciidoc"

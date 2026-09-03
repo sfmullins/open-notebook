@@ -18,6 +18,38 @@ env:
   NODE_VERSION: "22"
 
 jobs:
+  command-queue-restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/valt-runtime-hardening
+          fetch-depth: 0
+      - name: Restore verified queue implementation and remove stale import
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show c66244d9e6d7b3165e550997c5f64f786a2aa355:command_queue/__init__.py > command_queue/__init__.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('command_queue/__init__.py')
+          text = path.read_text(encoding='utf-8')
+          needle = '    get_database_url,\n'
+          if text.count(needle) != 1:
+              raise SystemExit('Expected exactly one stale get_database_url import')
+          path.write_text(text.replace(needle, ''), encoding='utf-8')
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add command_queue/__init__.py
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "fix(queue): restore verified asyncpg queue implementation"
+          git push origin HEAD:fix/valt-runtime-hardening
+
   boundary:
     runs-on: ubuntu-latest
     steps:

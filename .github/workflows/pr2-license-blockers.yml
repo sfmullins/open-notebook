@@ -1,0 +1,96 @@
+name: PR2 licence blocker remediation
+
+on:
+  push:
+    branches:
+      - fix/valt-runtime-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/valt-runtime-hardening
+          fetch-depth: 0
+      - name: Apply dependency and runtime boundary changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/pr2_license_blockers.py
+          python3 -m pip install --disable-pip-version-check 'uv==0.12.9'
+          uv lock
+          uv sync --frozen --no-dev
+      - name: Prove GPL asciidoc is absent and content-core still works
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -F 'name = "asciidoc"' uv.lock
+          .venv/bin/python - <<'PY'
+          import asyncio
+          import tempfile
+          from pathlib import Path
+          from content_core import check_file_support, extract_content
+
+          async def main():
+              direct = await extract_content(content="Vält content-core smoke test")
+              assert "Vält content-core smoke test" in direct.content
+              with tempfile.TemporaryDirectory() as tmp:
+                  path = Path(tmp) / "sample.txt"
+                  path.write_text("Vält document extraction smoke test", encoding="utf-8")
+                  support = await check_file_support(str(path))
+                  assert support.supported, support
+                  extracted = await extract_content(file_path=str(path))
+                  assert "Vält document extraction smoke test" in extracted.content
+
+          asyncio.run(main())
+          PY
+      - name: Prove imageio-ffmpeg contains no bundled executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python - <<'PY'
+          from pathlib import Path
+          import imageio_ffmpeg
+
+          root = Path(imageio_ffmpeg.__file__).resolve().parent
+          offenders = []
+          for path in root.rglob('*'):
+              if not path.is_file():
+                  continue
+              name = path.name.lower()
+              if name == 'ffmpeg.exe' or name.startswith('ffmpeg-'):
+                  offenders.append(str(path))
+          assert not offenders, f"bundled FFmpeg executable(s): {offenders}"
+          print(f"imageio-ffmpeg source-only package: {root}")
+          PY
+          if command -v ffmpeg >/dev/null 2>&1; then
+            IMAGEIO_FFMPEG_EXE="$(command -v ffmpeg)" .venv/bin/python - <<'PY'
+          import os
+          import imageio_ffmpeg
+          exe = imageio_ffmpeg.get_ffmpeg_exe()
+          assert exe == os.environ['IMAGEIO_FFMPEG_EXE'], (exe, os.environ['IMAGEIO_FFMPEG_EXE'])
+          print(f"external ffmpeg resolved: {exe}")
+          PY
+          fi
+      - name: Prove optional application image builds without FFmpeg redistribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t open-notebook:pr2-license-check .
+          if docker run --rm --entrypoint sh open-notebook:pr2-license-check -c 'command -v ffmpeg || command -v ffprobe'; then
+            echo 'FFmpeg unexpectedly present in image' >&2
+            exit 1
+          fi
+          docker run --rm --entrypoint node open-notebook:pr2-license-check --version | grep '^v22\.23\.2$'
+      - name: Commit remediated lock and runtime
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(compliance): remove GPL asciidoc and bundled FFmpeg from runtime"
+          git push origin HEAD:fix/valt-runtime-hardening

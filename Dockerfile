@@ -43,7 +43,10 @@ COPY certifi ./certifi
 COPY chardet ./chardet
 COPY pycountry ./pycountry
 COPY tqdm ./tqdm
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev \
+ && rm -rf .venv/lib/python*/site-packages/nodejs_wheel/lib/node_modules/npm \
+ && rm -f .venv/lib/python*/site-packages/nodejs_wheel/bin/npm* \
+          .venv/lib/python*/site-packages/nodejs_wheel/bin/npx*
 
 ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
 RUN mkdir -p /app/tiktoken-cache && \

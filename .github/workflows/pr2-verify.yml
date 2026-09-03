@@ -48,6 +48,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "0.12.9"
       - run: uv python install "$PYTHON_VERSION"
       - run: uv lock --check
       - run: uv sync --frozen --group dev
@@ -98,6 +100,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          version: "0.12.9"
       - run: uv python install "$PYTHON_VERSION"
       - run: uv sync --frozen
       - name: Start pinned legacy SurrealDB fixture
@@ -152,7 +156,7 @@ jobs:
         if: always()
         run: docker rm -f surreal-parity || true
 
-  image-sbom-inventory:
+  image-sbom:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -168,40 +172,17 @@ jobs:
             -v "$PWD:/out" \
             anchore/syft:v1.51.0 \
             docker:open-notebook:pr2 -o syft-json=/out/sbom.syft.json
-      - name: Print discovered package types and licences
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import json
-          from collections import defaultdict
-          data = json.load(open('sbom.syft.json', encoding='utf-8'))
-          found = defaultdict(set)
-          unknown = []
-          for artifact in data.get('artifacts', []):
-              kind = artifact.get('type') or 'unknown-type'
-              values = []
-              for item in artifact.get('licenses') or []:
-                  if isinstance(item, str):
-                      values.append(item)
-                  elif isinstance(item, dict):
-                      value = item.get('spdxExpression') or item.get('value')
-                      if value:
-                          values.append(value)
-              if not values:
-                  unknown.append((kind, artifact.get('name'), artifact.get('version')))
-                  values = ['NOASSERTION']
-              for value in values:
-                  found[kind].add(value)
-          for kind in sorted(found):
-              print(f'[{kind}]')
-              for value in sorted(found[kind]):
-                  print(f'  {value}')
-          print(f'Packages without detected licence: {len(unknown)}')
-          for item in unknown[:100]:
-              print('  UNKNOWN', *item)
-          PY
+      - name: Enforce full-image licence policy
+        run: python3 scripts/check_sbom_licenses.py sbom.syft.json
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: pr2-sbom-inventory
+          name: pr2-sbom
           path: sbom.syft.json
           if-no-files-found: error
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 scripts/check_md_links.py

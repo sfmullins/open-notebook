@@ -23,6 +23,11 @@ def test_record_id_round_trip() -> None:
     assert str(record_id) == "source:abc-123"
 
 
+def test_record_id_round_trip_from_model_dump_shape() -> None:
+    record_id = RecordID.parse({"table": "command", "id": "abc-123"})
+    assert str(record_id) == "command:abc-123"
+
+
 @pytest.mark.asyncio
 async def test_singleton_upsert_preserves_explicit_record_id() -> None:
     await _reset_store()

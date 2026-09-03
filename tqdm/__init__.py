@@ -26,7 +26,7 @@ class tqdm(Generic[T]):
 
     def __iter__(self) -> Iterator[T]:
         if self.iterable is None:
-            return iter(())
+            return
         for item in self.iterable:
             yield item
             self.update(1)

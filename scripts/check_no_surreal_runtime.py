@@ -24,6 +24,7 @@ RUNTIME_DIRS = (
     ROOT / "api",
     ROOT / "commands",
     ROOT / "open_notebook",
+    ROOT / "surreal_commands",
     ROOT / "deploy",
     ROOT / "examples",
     ROOT / "scripts",
@@ -87,8 +88,12 @@ def check_packaging() -> list[str]:
         pyproject = tomllib.load(handle)
 
     dependencies = pyproject.get("project", {}).get("dependencies", [])
-    if any(dependency_name(str(item)) == "surrealdb" for item in dependencies):
-        failures.append("pyproject.toml: external SurrealDB SDK dependency is prohibited")
+    prohibited_dependencies = {"surrealdb", "surreal-commands"}
+    for prohibited in sorted(prohibited_dependencies):
+        if any(dependency_name(str(item)) == prohibited for item in dependencies):
+            failures.append(
+                f"pyproject.toml: external {prohibited} dependency is prohibited"
+            )
 
     package_include = (
         pyproject.get("tool", {})
@@ -103,8 +108,13 @@ def check_packaging() -> list[str]:
     lock = ROOT / "uv.lock"
     if lock.exists():
         lock_text = lock.read_text(encoding="utf-8")
-        if re.search(r'(?m)^name\s*=\s*"surrealdb"\s*$', lock_text):
-            failures.append("uv.lock: SurrealDB SDK remains in the locked dependency graph")
+        for prohibited in ("surrealdb", "surreal-commands"):
+            if re.search(
+                rf'(?m)^name\s*=\s*"{re.escape(prohibited)}"\s*$', lock_text
+            ):
+                failures.append(
+                    f"uv.lock: prohibited {prohibited} package remains in the locked dependency graph"
+                )
     return failures
 
 

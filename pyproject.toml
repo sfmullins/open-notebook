@@ -54,7 +54,7 @@ surreal-commands-worker = "surreal_commands.worker:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["open_notebook*", "api*", "commands*", "surreal_commands*", "surrealdb*"]
+include = ["open_notebook*", "api*", "commands*", "surreal_commands*"]
 exclude = ["tests*", "frontend*"]
 
 [tool.setuptools.package-data]

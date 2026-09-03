@@ -24,7 +24,7 @@ RUNTIME_DIRS = (
     ROOT / "api",
     ROOT / "commands",
     ROOT / "open_notebook",
-    ROOT / "surreal_commands",
+    ROOT / "command_queue",
     ROOT / "deploy",
     ROOT / "examples",
     ROOT / "scripts",
@@ -88,7 +88,7 @@ def check_packaging() -> list[str]:
         pyproject = tomllib.load(handle)
 
     dependencies = pyproject.get("project", {}).get("dependencies", [])
-    prohibited_dependencies = {"surrealdb", "surreal-commands"}
+    prohibited_dependencies = {"surrealdb", "PostgreSQL command queue"}
     for prohibited in sorted(prohibited_dependencies):
         if any(dependency_name(str(item)) == prohibited for item in dependencies):
             failures.append(
@@ -108,7 +108,7 @@ def check_packaging() -> list[str]:
     lock = ROOT / "uv.lock"
     if lock.exists():
         lock_text = lock.read_text(encoding="utf-8")
-        for prohibited in ("surrealdb", "surreal-commands"):
+        for prohibited in ("surrealdb", "PostgreSQL command queue"):
             if re.search(
                 rf'(?m)^name\s*=\s*"{re.escape(prohibited)}"\s*$', lock_text
             ):

@@ -41,7 +41,7 @@ from open_notebook.exceptions import (
     OpenNotebookError,
     UnsupportedTypeException,
 )
-from surreal_commands import execute_command_sync, submit_command
+from command_queue import execute_command_sync, submit_command
 
 router = APIRouter()
 

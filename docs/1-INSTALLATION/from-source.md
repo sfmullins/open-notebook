@@ -85,7 +85,7 @@ source stays stuck at `Source processing status: CommandStatus.NEW` forever.
 ```bash
 # Terminal 3
 make worker
-# or: uv run --env-file .env surreal-commands-worker --import-modules commands
+# or: uv run --env-file .env open-notebook-command-worker --import-modules commands
 ```
 
 > `make start-all` starts Database + API + Worker + Frontend together; the steps

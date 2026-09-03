@@ -50,11 +50,11 @@ dependencies = [
 ]
 
 [project.scripts]
-surreal-commands-worker = "surreal_commands.worker:main"
+open-notebook-command-worker = "command_queue.worker:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["open_notebook*", "api*", "commands*", "surreal_commands*"]
+include = ["open_notebook*", "api*", "commands*", "command_queue*"]
 exclude = ["tests*", "frontend*"]
 
 [tool.setuptools.package-data]

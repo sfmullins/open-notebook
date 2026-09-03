@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from open_notebook.database.postgres import db_connection, ensure_schema
-from surreal_commands import claim_job, heartbeat
+from command_queue import claim_job, heartbeat
 
 
 async def _reset_queue() -> None:

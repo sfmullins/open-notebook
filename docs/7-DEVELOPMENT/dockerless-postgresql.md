@@ -8,7 +8,7 @@ This branch removes Docker and SurrealDB as runtime requirements. Open Notebook 
 | --- | --- | --- |
 | Frontend | Next.js `npm start` | public `:8502`; proxies `/api/*` internally |
 | API | `python run_api.py` | loopback/private `:5055` |
-| Worker | `surreal-commands-worker` compatibility CLI | PostgreSQL queue |
+| Worker | `open-notebook-command-worker` compatibility CLI | PostgreSQL queue |
 | Database | PostgreSQL + pgvector | local/private `:5432` |
 
 The browser uses same-origin `/api/*` by default. `API_URL` remains an explicit override only for split deployments.

@@ -10,7 +10,7 @@ Open Notebook needs document storage (sources with metadata), graph relationship
 
 ## Decision
 
-Use **SurrealDB** as the single database: documents, graph relationships, vector embeddings and (via surreal-commands) job queueing in one service. Stay with it and work through the challenges; reconsider only under the exit criteria listed in #372 (unworkable transaction conflicts, performance that tuning can't fix, unpatched critical security issue, or a mature alternative with the same consolidated benefits).
+Use **SurrealDB** as the single database: documents, graph relationships, vector embeddings and (via PostgreSQL command queue) job queueing in one service. Stay with it and work through the challenges; reconsider only under the exit criteria listed in #372 (unworkable transaction conflicts, performance that tuning can't fix, unpatched critical security issue, or a mature alternative with the same consolidated benefits).
 
 ## Alternatives considered
 

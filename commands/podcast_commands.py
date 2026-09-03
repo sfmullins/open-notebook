@@ -15,7 +15,7 @@ from open_notebook.podcasts.models import (
     _resolve_model_config,
 )
 from open_notebook.utils.model_utils import full_model_dump
-from surreal_commands import CommandInput, CommandOutput, command
+from command_queue import CommandInput, CommandOutput, command
 
 try:
     from podcast_creator import configure, create_podcast

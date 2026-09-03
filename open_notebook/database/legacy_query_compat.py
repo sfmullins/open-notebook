@@ -138,7 +138,7 @@ async def _source_listing(query: str, params: Mapping[str, Any]) -> list[dict[st
     command_ids = [str(row["command"]) for row in sources if row.get("command")]
     command_map: dict[str, Any] = {}
     if command_ids:
-        from surreal_commands import get_command_statuses
+        from command_queue import get_command_statuses
 
         command_map = await get_command_statuses(command_ids)
 

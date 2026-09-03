@@ -66,7 +66,7 @@ This guide documents how to install and run [Open Notebook](https://github.com/l
 
    REM Terminal 3 — Worker (module form avoids the Windows "canonicalize" error, see Issue 3)
    set PYTHONPATH=%CD%
-   uv run --env-file .env python -m surreal_commands.cli.worker --import-modules commands
+   uv run --env-file .env python -m command_queue.cli.worker --import-modules commands
 
    REM Terminal 4 — Frontend
    cd frontend && npm run dev
@@ -110,7 +110,7 @@ cd /d %ROOT%
 
 start "SurrealDB" surreal start --user root --pass root --bind 127.0.0.1:8000 rocksdb:%DATA_ROOT%\surrealdb
 start "API" cmd /k "uv run --env-file .env run_api.py"
-start "Worker" cmd /k "uv run --env-file .env python -m surreal_commands.cli.worker --import-modules commands"
+start "Worker" cmd /k "uv run --env-file .env python -m command_queue.cli.worker --import-modules commands"
 start "Frontend" cmd /k "cd /d %ROOT%\frontend && npm run dev"
 ```
 
@@ -170,13 +170,13 @@ SURREAL_URL="ws://127.0.0.1:8000/rpc"
 Failed to canonicalize script path
 ```
 
-**Cause:** The `surreal-commands-worker.exe` can't find the Python `commands` module.
+**Cause:** The `open-notebook-command-worker.exe` can't find the Python `commands` module.
 
 **Solution:** Use Python module invocation with PYTHONPATH:
 
 ```batch
 set PYTHONPATH=%ROOT%
-uv run --env-file .env python -m surreal_commands.cli.worker --import-modules commands
+uv run --env-file .env python -m command_queue.cli.worker --import-modules commands
 ```
 
 ### Issue 4: DATA_FOLDER Path Parsing Error

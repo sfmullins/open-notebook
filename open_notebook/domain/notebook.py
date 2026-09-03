@@ -10,7 +10,7 @@ from open_notebook.database.record_id import RecordID
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel
 from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
-from surreal_commands import submit_command
+from command_queue import submit_command
 
 
 class Notebook(ObjectModel):
@@ -409,7 +409,7 @@ class Source(ObjectModel):
     full_text: Optional[str] = None
     last_viewed_at: Optional[datetime] = None
     command: Optional[Union[str, RecordID]] = Field(
-        default=None, description="Link to surreal-commands processing job"
+        default=None, description="Link to PostgreSQL command queue processing job"
     )
 
     @field_validator("command", mode="before")
@@ -436,7 +436,7 @@ class Source(ObjectModel):
             return None
 
         try:
-            from surreal_commands import get_command_status
+            from command_queue import get_command_status
 
             status = await get_command_status(str(self.command))
             return status.status if status else "unknown"
@@ -450,7 +450,7 @@ class Source(ObjectModel):
             return None
 
         try:
-            from surreal_commands import get_command_status
+            from command_queue import get_command_status
 
             status_result = await get_command_status(str(self.command))
             if not status_result:
@@ -598,7 +598,7 @@ class Source(ObjectModel):
             InvalidInputError: If insight_type or content is empty
             DatabaseOperationError: If submitting the command fails. Matches
                 vectorize()'s contract - callers (transformation.py, source.py)
-                run inside surreal-commands jobs whose outer exception
+                run inside PostgreSQL command queue jobs whose outer exception
                 handling already retries transient failures, so a swallowed
                 submission failure here previously meant a transformation
                 could report success while the insight was silently never

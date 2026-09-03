@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from api.command_service import CommandService
 from open_notebook.exceptions import OpenNotebookError
-from surreal_commands import registry
+from command_queue import registry
 
 router = APIRouter()
 

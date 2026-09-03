@@ -245,7 +245,7 @@ class PodcastEpisode(ObjectModel):
         default_factory=dict, description="Generated outline"
     )
     command: Optional[Union[str, RecordID]] = Field(
-        default=None, description="Link to surreal-commands job"
+        default=None, description="Link to PostgreSQL command queue job"
     )
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -256,7 +256,7 @@ class PodcastEpisode(ObjectModel):
             return None
 
         try:
-            from surreal_commands import get_command_status
+            from command_queue import get_command_status
 
             status = await get_command_status(str(self.command))
             return status.status if status else "unknown"
@@ -269,7 +269,7 @@ class PodcastEpisode(ObjectModel):
             return {"status": None, "error_message": None}
 
         try:
-            from surreal_commands import get_command_status
+            from command_queue import get_command_status
 
             status = await get_command_status(str(self.command))
             if not status:
@@ -288,11 +288,11 @@ class PodcastEpisode(ObjectModel):
         """
         Batch-fetch {status, error_message} for many commands in one query.
 
-        Listing episodes otherwise calls get_job_detail() -> surreal_commands
+        Listing episodes otherwise calls get_job_detail() -> command_queue
         .get_command_status() once per episode, each its own round trip
         against the `command` table (no connection pooling in the repository
         layer, see docs/7-DEVELOPMENT/architecture.md) - O(n) queries for n
-        episodes. surreal_commands has no batch lookup, but its command table
+        episodes. command_queue has no batch lookup, but its command table
         lives in the same database (same SURREAL_* env vars), so this queries
         it directly in one shot instead of looping through the library's
         per-command helper.

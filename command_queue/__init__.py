@@ -1,7 +1,6 @@
-"""PostgreSQL-backed compatibility layer for the former ``surreal-commands`` API.
+"""PostgreSQL-backed durable command queue for Open Notebook.
 
-Keeping the import surface stable avoids coupling command/domain code to the queue
-backend while removing SurrealDB from the runtime. Jobs are durable, claimed with
+The queue is independent of the application domain and uses PostgreSQL for durable jobs. Jobs are durable, claimed with
 ``FOR UPDATE SKIP LOCKED`` and protected by renewable leases so a crashed worker can
 be recovered without duplicating healthy long-running work.
 """

@@ -18,7 +18,7 @@ from open_notebook.domain.notebook import Note, Source, SourceInsight
 from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
 from open_notebook.utils.embedding import generate_embedding, generate_embeddings
-from surreal_commands import CommandInput, CommandOutput, command, submit_command
+from command_queue import CommandInput, CommandOutput, command, submit_command
 
 # NOTE: `stop_on` below can never trigger in practice — each command catches
 # ValueError internally and returns success=False instead of raising, so the
@@ -88,7 +88,7 @@ async def _embed_record(
         logger.error(f"Failed to embed {kind} {record_id} (command: {cmd_id}): {e}")
         return None, processing_time, str(e)
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - will be retried (PostgreSQL command queue logs final failure)
         cmd_id = get_command_id(input_data)
         logger.debug(
             f"Transient error embedding {kind} {record_id} (command: {cmd_id}): {e}"
@@ -489,7 +489,7 @@ async def create_insight_command(
             error_message=str(e),
         )
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - will be retried (PostgreSQL command queue logs final failure)
         cmd_id = get_command_id(input_data)
         logger.debug(
             f"Transient error creating insight for source {input_data.source_id} "

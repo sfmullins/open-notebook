@@ -68,7 +68,7 @@ reviews:
           errors with classify_error(); model output goes through clean_thinking_content().
         - Domain: Source.save() does not auto-embed — vectorize() must be called explicitly;
           RecordModel singletons need clear_instance() in tests.
-        - Async jobs (podcasts, embeddings, source processing) run on the surreal-commands
+        - Async jobs (podcasts, embeddings, source processing) run on the PostgreSQL command queue
           worker; features depending on them must not assume inline execution. Permanent
           failures raise ValueError (no retry); podcasts use max_attempts=1 by design.
         - Frontend: FormData nested fields must be JSON.stringify-ed; don't re-add

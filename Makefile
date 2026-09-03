@@ -34,11 +34,11 @@ worker: worker-start
 
 worker-start:
 	@echo "Starting PostgreSQL-backed command worker..."
-	uv run --env-file .env surreal-commands-worker --import-modules commands --max-tasks "$${OPEN_NOTEBOOK_WORKER_MAX_TASKS:-5}"
+	uv run --env-file .env open-notebook-command-worker --import-modules commands --max-tasks "$${OPEN_NOTEBOOK_WORKER_MAX_TASKS:-5}"
 
 worker-stop:
 	@echo "Stopping Open Notebook command worker..."
-	@pkill -f "surreal-commands-worker" || true
+	@pkill -f "open-notebook-command-worker" || true
 
 worker-restart: worker-stop
 	@sleep 2
@@ -48,7 +48,7 @@ start-all: native-check
 	@echo "Starting Open Notebook (PostgreSQL + API + Worker + Frontend)..."
 	@uv run --env-file .env run_api.py &
 	@sleep 2
-	@uv run --env-file .env surreal-commands-worker --import-modules commands --max-tasks "$${OPEN_NOTEBOOK_WORKER_MAX_TASKS:-5}" &
+	@uv run --env-file .env open-notebook-command-worker --import-modules commands --max-tasks "$${OPEN_NOTEBOOK_WORKER_MAX_TASKS:-5}" &
 	@sleep 1
 	@echo "Frontend: http://localhost:3000"
 	@echo "API is proxied through the frontend at /api/*"
@@ -58,7 +58,7 @@ stop-all:
 	@echo "Stopping Open Notebook application services..."
 	@pkill -f "next dev" || true
 	@pkill -f "next start" || true
-	@pkill -f "surreal-commands-worker" || true
+	@pkill -f "open-notebook-command-worker" || true
 	@pkill -f "run_api.py" || true
 	@pkill -f "uvicorn api.main:app" || true
 	@echo "PostgreSQL was not stopped because it is an operating-system database service."
@@ -67,7 +67,7 @@ status:
 	@echo "Open Notebook Service Status:"
 	@pg_isready -d "$${DATABASE_URL:-postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook}" >/dev/null 2>&1 && echo "PostgreSQL: running" || echo "PostgreSQL: not reachable"
 	@pgrep -f "run_api.py\|uvicorn api.main:app" >/dev/null && echo "API: running" || echo "API: not running"
-	@pgrep -f "surreal-commands-worker" >/dev/null && echo "Worker: running" || echo "Worker: not running"
+	@pgrep -f "open-notebook-command-worker" >/dev/null && echo "Worker: running" || echo "Worker: not running"
 	@pgrep -f "next dev\|next start" >/dev/null && echo "Frontend: running" || echo "Frontend: not running"
 
 lint:

@@ -8,7 +8,7 @@ from open_notebook.database.repository import ensure_record_id
 from open_notebook.domain.notebook import Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import ConfigurationError
-from surreal_commands import CommandInput, CommandOutput, command
+from command_queue import CommandInput, CommandOutput, command
 
 try:
     from open_notebook.graphs.source import source_graph
@@ -130,7 +130,7 @@ async def process_source_command(
         )
 
     except ValueError as e:
-        # Validation errors are permanent failures. Re-raise so surreal-commands
+        # Validation errors are permanent failures. Re-raise so PostgreSQL command queue
         # marks the job as `failed` (stop_on=[ValueError] already prevents
         # pointless retries). Returning a success=False result instead marks the
         # job `completed` (is_success() checks job status, not the payload),
@@ -139,7 +139,7 @@ async def process_source_command(
         logger.error(f"Source processing failed (permanent): {e}")
         raise
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - will be retried (PostgreSQL command queue logs final failure)
         logger.debug(
             f"Transient error processing source {input_data.source_id}: {e}"
         )
@@ -255,7 +255,7 @@ async def run_transformation_command(
             error_message=str(e),
         )
     except Exception as e:
-        # Transient failure - will be retried (surreal-commands logs final failure)
+        # Transient failure - will be retried (PostgreSQL command queue logs final failure)
         logger.debug(
             f"Transient error running transformation {input_data.transformation_id} "
             f"on source {input_data.source_id}: {e}"

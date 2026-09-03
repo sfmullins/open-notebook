@@ -11,7 +11,7 @@ from api.models import (
 )
 from open_notebook.database.repository import repo_query
 from open_notebook.exceptions import OpenNotebookError
-from surreal_commands import get_command_status
+from command_queue import get_command_status
 
 router = APIRouter()
 
@@ -137,7 +137,7 @@ async def get_rebuild_status(command_id: str):
     - **timestamps**: started_at, completed_at
     """
     try:
-        # Get command status from surreal_commands
+        # Get command status from command_queue
         status = await get_command_status(command_id)
 
         if not status:

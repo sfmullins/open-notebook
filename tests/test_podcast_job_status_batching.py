@@ -3,7 +3,7 @@ Tests for the podcast episode listing N+1 fix (api/routers/podcasts.py +
 open_notebook/podcasts/models.py).
 
 list_podcast_episodes() used to call episode.get_job_detail() once per
-episode - each a separate round trip against the surreal_commands `command`
+episode - each a separate round trip against the command_queue `command`
 table. PodcastEpisode.get_job_details_for_commands() batches that into one
 query; the router now calls it once up front instead of looping.
 """

@@ -135,7 +135,7 @@ services:
       - ollama
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.33.2
     ports:
       - "11434:11434"
     volumes:

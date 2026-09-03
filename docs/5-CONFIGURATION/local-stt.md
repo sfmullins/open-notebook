@@ -32,7 +32,7 @@ Create a folder and add `docker-compose.yml`:
 ```yaml
 services:
   speaches:
-    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    image: ghcr.io/speaches-ai/speaches:0.8.3-cpu
     container_name: speaches
     ports:
       - "8969:8000"
@@ -138,7 +138,7 @@ For faster transcription with NVIDIA GPUs:
 ```yaml
 services:
   speaches:
-    image: ghcr.io/speaches-ai/speaches:latest-cuda
+    image: ghcr.io/speaches-ai/speaches:0.8.3-cuda
     container_name: speaches
     ports:
       - "8969:8000"

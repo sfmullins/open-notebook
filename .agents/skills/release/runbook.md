@@ -23,12 +23,9 @@ done
 ## RC stack with a copy of the owner's dev data (Phase 6)
 
 ```bash
-# 1. Find which SurrealDB instance dev actually uses — read SURREAL_URL in .env
-#    (multiple instances may run locally; the repo-compose one on :8000 may NOT
-#    be it), and note SURREAL_DATABASE.
-# 2. Consistent export from the RUNNING instance (originals untouched):
-docker exec <that-container> /surreal export --conn http://localhost:8000 \
-  --user root --pass root --ns open_notebook --db <that-db> /dev/stdout > /tmp/dev-dump.surql
+# 1. Identify the PostgreSQL instance from DATABASE_URL.
+# 2. Take a consistent logical copy from the running instance:
+pg_dump --format=custom --file=/tmp/dev-dump.pg "$DATABASE_URL"
 # 3. Boot (rc-stack.sh docker-pulls the pushed tag by default, so a local
 #    build can't shadow the registry artifact):
 make release-stack TAG=<ver> DUMP=/tmp/dev-dump.surql

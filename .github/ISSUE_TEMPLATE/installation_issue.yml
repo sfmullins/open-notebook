@@ -95,9 +95,8 @@ body:
 
         **⚠️ IMPORTANT: REDACT ALL API KEYS AND PASSWORDS!**
       placeholder: |
-        SURREAL_URL=ws://surrealdb:8000/rpc
-        SURREAL_USER=root
-        SURREAL_PASSWORD=***REDACTED***
+        DATABASE_URL=postgresql://open_notebook:***REDACTED***@postgres:5432/open_notebook
+        POSTGRES_URL=postgresql://open_notebook:***REDACTED***@postgres:5432/open_notebook
         OPENAI_API_KEY=sk-***REDACTED***
         ANTHROPIC_API_KEY=sk-ant-***REDACTED***
       render: shell

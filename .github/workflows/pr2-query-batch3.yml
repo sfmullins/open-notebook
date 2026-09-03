@@ -21,6 +21,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("commands/embedding_commands.py")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace(
+              "            # RETURN returns the array directly as the result (not nested)\n",
+              "",
+              1,
+          )
+          p.write_text(text, encoding="utf-8")
+          PY
           python3 scripts/pr2_query_batch3.py
           python3 -m compileall -q \
             open_notebook/database/embeddings.py \

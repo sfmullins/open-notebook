@@ -3,7 +3,7 @@
 # server. Native installation remains the primary deployment path.
 
 # Stage 1: Frontend builder
-FROM node:22-slim AS frontend-builder
+FROM node:22.23.2-slim AS frontend-builder
 WORKDIR /app/frontend
 
 COPY frontend/package.json frontend/package-lock.json ./
@@ -22,11 +22,11 @@ COPY frontend/ ./
 RUN npm run build
 
 # Stage 2: Backend builder
-FROM python:3.12-slim-trixie AS backend-builder
+FROM python:3.12.14-slim-trixie AS backend-builder
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /uvx /bin/
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -43,15 +43,16 @@ RUN mkdir -p /app/tiktoken-cache && \
 
 # Stage 3: Application runtime. The database is always PostgreSQL + pgvector
 # supplied externally (native system service or a separate container).
-FROM python:3.12-slim-trixie AS runtime
+FROM python:3.12.14-slim-trixie AS runtime
+# FFmpeg is deliberately NOT installed in this image. Vält does not redistribute
+# the FFmpeg executable; operators who enable media/podcast features provide it
+# externally. Node is copied from the pinned frontend stage instead of using a
+# mutable remote installation script.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
-    ffmpeg \
     supervisor \
-    curl \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /uvx /bin/
 WORKDIR /app
 COPY --from=backend-builder /app/.venv /app/.venv
 COPY . /app

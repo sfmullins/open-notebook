@@ -95,6 +95,20 @@ ignore = [
 ]
 
 [tool.uv]
+# Vält shipped userland is permissive-only. content-core 2.0.4 declares
+# asciidoc 10.2.1 (GPL-2.0-or-later), but does not import it in the extraction
+# paths Open Notebook uses. Exclude only that transitive edge; CI smoke-tests
+# content-core extraction without it so this cannot silently become required.
+exclude-dependencies = [
+    { package = { name = "content-core" }, dependencies = ["asciidoc"] },
+]
+
+# imageio-ffmpeg is a permissive Python wrapper, but its binary wheels can
+# contain an FFmpeg executable. Force source installation so Vält never
+# redistributes that binary. Media/podcast features use an operator-supplied
+# ffmpeg/ffprobe installation outside the Vält userland boundary.
+no-binary-package = ["imageio-ffmpeg"]
+
 # Pillow < 12.2.0 has open security advisories (PSD OOB write, FITS
 # decompression bomb, PDF trailer DoS). The only thing holding it back is
 # moviepy's `pillow<12` cap, pulled in via podcast-creator 0.12.0 — and

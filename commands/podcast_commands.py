@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional
 
 from loguru import logger
-from surreal_commands import CommandInput, CommandOutput, command
 
 from open_notebook.config import PODCASTS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
@@ -16,6 +15,7 @@ from open_notebook.podcasts.models import (
     _resolve_model_config,
 )
 from open_notebook.utils.model_utils import full_model_dump
+from surreal_commands import CommandInput, CommandOutput, command
 
 try:
     from podcast_creator import configure, create_podcast

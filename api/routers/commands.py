@@ -3,10 +3,10 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel, Field
-from surreal_commands import registry
 
 from api.command_service import CommandService
 from open_notebook.exceptions import OpenNotebookError
+from surreal_commands import registry
 
 router = APIRouter()
 

@@ -11,7 +11,12 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping
 
-from open_notebook.database.postgres import db_connection, ensure_schema, get_record, list_records
+from open_notebook.database.postgres import (
+    db_connection,
+    ensure_schema,
+    get_record,
+    list_records,
+)
 from open_notebook.database.record_id import RecordID
 
 NOT_HANDLED = object()

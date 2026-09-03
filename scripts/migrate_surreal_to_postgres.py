@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from collections.abc import Mapping
 import json
 import os
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 

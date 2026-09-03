@@ -2,9 +2,9 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from loguru import logger
-from surreal_commands import get_command_status, submit_command
 
 from open_notebook.database.postgres import db_connection, ensure_schema
+from surreal_commands import get_command_status, submit_command
 
 
 class CommandService:

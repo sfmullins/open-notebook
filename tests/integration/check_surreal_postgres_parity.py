@@ -5,6 +5,12 @@ from __future__ import annotations
 
 import asyncio
 import math
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from open_notebook.database.postgres import db_connection, ensure_schema
 from scripts.migrate_surreal_to_postgres import postgres_is_empty

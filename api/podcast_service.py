@@ -4,9 +4,9 @@ from fastapi import HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
+from command_queue import get_command_status, submit_command
 from open_notebook.domain.notebook import Notebook
 from open_notebook.podcasts.models import EpisodeProfile, PodcastEpisode, SpeakerProfile
-from command_queue import get_command_status, submit_command
 
 
 class PodcastGenerationRequest(BaseModel):

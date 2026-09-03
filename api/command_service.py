@@ -3,8 +3,8 @@ from uuid import UUID
 
 from loguru import logger
 
-from open_notebook.database.postgres import db_connection, ensure_schema
 from command_queue import get_command_status, submit_command
+from open_notebook.database.postgres import db_connection, ensure_schema
 
 
 class CommandService:

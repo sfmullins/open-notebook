@@ -36,9 +36,14 @@ def _last_viewed_sort_key(item: RecentlyViewedResponse) -> str:
 async def _stamp_notebook_view(notebook_id: str) -> None:
     try:
         from datetime import datetime, timezone
-        await repo_update_record(notebook_id, {"last_viewed_at": datetime.now(timezone.utc)})
+
+        await repo_update_record(
+            notebook_id, {"last_viewed_at": datetime.now(timezone.utc)}
+        )
     except Exception as e:
-        logger.warning(f"Failed to stamp last_viewed_at for notebook {notebook_id}: {e}")
+        logger.warning(
+            f"Failed to stamp last_viewed_at for notebook {notebook_id}: {e}"
+        )
 
 
 def _recently_viewed_notebook(row: dict) -> RecentlyViewedResponse:
@@ -67,23 +72,33 @@ async def get_notebooks(
     try:
         allowed_fields = {"name", "created", "updated"}
         parts = order_by.strip().lower().split()
-        if not (1 <= len(parts) <= 2) or parts[0] not in allowed_fields or (len(parts) == 2 and parts[1] not in {"asc", "desc"}):
+        if (
+            not (1 <= len(parts) <= 2)
+            or parts[0] not in allowed_fields
+            or (len(parts) == 2 and parts[1] not in {"asc", "desc"})
+        ):
             raise HTTPException(status_code=400, detail="Invalid order_by")
         field = parts[0]
         descending = len(parts) == 2 and parts[1] == "desc"
         filters = {"archived": archived} if archived is not None else None
-        rows = await repo_list("notebook", filters=filters, order_by=field, descending=descending)
+        rows = await repo_list(
+            "notebook", filters=filters, order_by=field, descending=descending
+        )
         responses = []
         for nb in rows:
             nb_id = str(nb.get("id", ""))
-            responses.append(NotebookResponse(
-                id=nb_id,
-                name=nb.get("name", ""), description=nb.get("description", ""),
-                archived=nb.get("archived", False), created=str(nb.get("created", "")),
-                updated=str(nb.get("updated", "")),
-                source_count=await repo_relation_count("reference", target=nb_id),
-                note_count=await repo_relation_count("artifact", target=nb_id),
-            ))
+            responses.append(
+                NotebookResponse(
+                    id=nb_id,
+                    name=nb.get("name", ""),
+                    description=nb.get("description", ""),
+                    archived=nb.get("archived", False),
+                    created=str(nb.get("created", "")),
+                    updated=str(nb.get("updated", "")),
+                    source_count=await repo_relation_count("reference", target=nb_id),
+                    note_count=await repo_relation_count("artifact", target=nb_id),
+                )
+            )
         return responses
     except HTTPException:
         raise
@@ -91,7 +106,9 @@ async def get_notebooks(
         raise
     except Exception as e:
         logger.error(f"Error fetching notebooks: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching notebooks: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching notebooks: {str(e)}"
+        )
 
 
 @router.post("/notebooks", response_model=NotebookResponse)
@@ -132,9 +149,24 @@ async def get_recently_viewed(
     limit: int = Query(12, ge=1, le=50, description="Number of items to return"),
 ):
     try:
-        notebooks = await repo_list("notebook", non_null_fields={"last_viewed_at"}, order_by="last_viewed_at", descending=True, limit=limit)
-        sources = await repo_list("source", non_null_fields={"last_viewed_at"}, order_by="last_viewed_at", descending=True, limit=limit)
-        items = [*[_recently_viewed_notebook(nb) for nb in notebooks], *[_recently_viewed_source(src) for src in sources]]
+        notebooks = await repo_list(
+            "notebook",
+            non_null_fields={"last_viewed_at"},
+            order_by="last_viewed_at",
+            descending=True,
+            limit=limit,
+        )
+        sources = await repo_list(
+            "source",
+            non_null_fields={"last_viewed_at"},
+            order_by="last_viewed_at",
+            descending=True,
+            limit=limit,
+        )
+        items = [
+            *[_recently_viewed_notebook(nb) for nb in notebooks],
+            *[_recently_viewed_source(src) for src in sources],
+        ]
         items.sort(key=_last_viewed_sort_key, reverse=True)
         return items[:limit]
     except HTTPException:
@@ -143,7 +175,9 @@ async def get_recently_viewed(
         raise
     except Exception as e:
         logger.exception(f"Error fetching recently viewed items: {e}")
-        raise HTTPException(status_code=500, detail="Error fetching recently viewed items")
+        raise HTTPException(
+            status_code=500, detail="Error fetching recently viewed items"
+        )
 
 
 @router.get(
@@ -184,8 +218,12 @@ async def get_notebook(notebook_id: str):
         await _stamp_notebook_view(notebook.id or notebook_id)
         nb_id = notebook.id or notebook_id
         return NotebookResponse(
-            id=nb_id, name=notebook.name, description=notebook.description,
-            archived=notebook.archived or False, created=str(notebook.created), updated=str(notebook.updated),
+            id=nb_id,
+            name=notebook.name,
+            description=notebook.description,
+            archived=notebook.archived or False,
+            created=str(notebook.created),
+            updated=str(notebook.updated),
             source_count=await repo_relation_count("reference", target=nb_id),
             note_count=await repo_relation_count("artifact", target=nb_id),
         )
@@ -197,7 +235,9 @@ async def get_notebook(notebook_id: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching notebook {notebook_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error fetching notebook: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching notebook: {str(e)}"
+        )
 
 
 @router.put("/notebooks/{notebook_id}", response_model=NotebookResponse)
@@ -213,8 +253,12 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
         await notebook.save()
         nb_id = notebook.id or notebook_id
         return NotebookResponse(
-            id=nb_id, name=notebook.name, description=notebook.description,
-            archived=notebook.archived or False, created=str(notebook.created), updated=str(notebook.updated),
+            id=nb_id,
+            name=notebook.name,
+            description=notebook.description,
+            archived=notebook.archived or False,
+            created=str(notebook.created),
+            updated=str(notebook.updated),
             source_count=await repo_relation_count("reference", target=nb_id),
             note_count=await repo_relation_count("artifact", target=nb_id),
         )
@@ -228,7 +272,9 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
         raise
     except Exception as e:
         logger.error(f"Error updating notebook {notebook_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating notebook: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error updating notebook: {str(e)}"
+        )
 
 
 @router.post("/notebooks/{notebook_id}/sources/{source_id}")
@@ -236,7 +282,9 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
     try:
         await Notebook.get(notebook_id)
         await Source.get(source_id)
-        if not await repo_relation_exists("reference", source=source_id, target=notebook_id):
+        if not await repo_relation_exists(
+            "reference", source=source_id, target=notebook_id
+        ):
             await repo_relate(source_id, "reference", notebook_id)
         return {"message": "Source linked to notebook successfully"}
     except NotFoundError:
@@ -246,8 +294,12 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
     except OpenNotebookError:
         raise
     except Exception as e:
-        logger.error(f"Error linking source {source_id} to notebook {notebook_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error linking source to notebook: {str(e)}")
+        logger.error(
+            f"Error linking source {source_id} to notebook {notebook_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error linking source to notebook: {str(e)}"
+        )
 
 
 @router.delete("/notebooks/{notebook_id}/sources/{source_id}")
@@ -263,8 +315,12 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
     except OpenNotebookError:
         raise
     except Exception as e:
-        logger.error(f"Error removing source {source_id} from notebook {notebook_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error removing source from notebook: {str(e)}")
+        logger.error(
+            f"Error removing source {source_id} from notebook {notebook_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error removing source from notebook: {str(e)}"
+        )
 
 
 @router.delete("/notebooks/{notebook_id}", response_model=NotebookDeleteResponse)

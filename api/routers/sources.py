@@ -30,6 +30,7 @@ from api.models import (
     SourceStatusResponse,
     SourceUpdate,
 )
+from command_queue import execute_command_sync, submit_command
 from commands.source_commands import SourceProcessingInput
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.embeddings import count_source_embeddings
@@ -50,7 +51,6 @@ from open_notebook.exceptions import (
     OpenNotebookError,
     UnsupportedTypeException,
 )
-from command_queue import execute_command_sync, submit_command
 
 router = APIRouter()
 
@@ -122,7 +122,6 @@ def _source_sort_value(row: dict[str, Any], field: str) -> Any:
     if field == "embedded":
         return bool(row.get("embedded"))
     return row.get(field)
-
 
 
 async def _stamp_source_view(source_id: str) -> None:
@@ -302,7 +301,9 @@ async def get_sources(
             )
         descending = sort_order.lower() == "desc"
         if sort_order.lower() not in {"asc", "desc"}:
-            raise HTTPException(status_code=400, detail="sort_order must be 'asc' or 'desc'")
+            raise HTTPException(
+                status_code=400, detail="sort_order must be 'asc' or 'desc'"
+            )
 
         if notebook_id:
             await Notebook.get(notebook_id)
@@ -966,9 +967,7 @@ async def retry_source_processing(source_id: str):
         # (RELATE source->reference->notebook), so it only has `in`/`out` columns —
         # there is no `source`/`notebook` column. Mirror the working query at the
         # source-list path above. See issue #861.
-        references = await repo_relations(
-            "reference", source=source.id or source_id
-        )
+        references = await repo_relations("reference", source=source.id or source_id)
         notebook_ids = [str(relation["out"]) for relation in references]
 
         if not notebook_ids:

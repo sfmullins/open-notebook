@@ -9,13 +9,13 @@ from api.models import (
     RebuildStats,
     RebuildStatusResponse,
 )
+from command_queue import get_command_status
 from open_notebook.database.embeddings import (
     count_distinct_source_embeddings,
     count_record_embeddings,
 )
 from open_notebook.database.repository import repo_count
 from open_notebook.exceptions import OpenNotebookError
-from command_queue import get_command_status
 
 router = APIRouter()
 
@@ -47,7 +47,9 @@ async def start_rebuild(request: RebuildRequest):
                 total_estimate += await count_distinct_source_embeddings()
             else:
                 total_estimate += await repo_count(
-                    "source", non_null_fields={"full_text"}, non_empty_fields={"full_text"}
+                    "source",
+                    non_null_fields={"full_text"},
+                    non_empty_fields={"full_text"},
                 )
 
         if request.include_notes:

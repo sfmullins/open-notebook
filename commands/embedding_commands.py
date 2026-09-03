@@ -12,6 +12,7 @@ from typing import (
 
 from loguru import logger
 
+from command_queue import CommandInput, CommandOutput, command, submit_command
 from open_notebook.ai.models import model_manager
 from open_notebook.database.embeddings import (
     delete_source_embeddings,
@@ -19,12 +20,16 @@ from open_notebook.database.embeddings import (
     source_ids_with_embeddings,
     upsert_record_embedding,
 )
-from open_notebook.database.repository import ensure_record_id, repo_create, repo_insert, repo_list
+from open_notebook.database.repository import (
+    ensure_record_id,
+    repo_create,
+    repo_insert,
+    repo_list,
+)
 from open_notebook.domain.notebook import Note, Source, SourceInsight
 from open_notebook.exceptions import ConfigurationError
 from open_notebook.utils.chunking import ContentType, chunk_text, detect_content_type
 from open_notebook.utils.embedding import generate_embedding, generate_embeddings
-from command_queue import CommandInput, CommandOutput, command, submit_command
 
 # NOTE: `stop_on` below can never trigger in practice — each command catches
 # ValueError internally and returns success=False instead of raising, so the
@@ -520,7 +525,9 @@ async def collect_items_for_rebuild(
             result = [{"id": rid} for rid in await record_ids_with_embeddings("note")]
         else:  # mode == "all"
             # Query all notes with non-empty content
-            result = await repo_list("note", non_null_fields={"content"}, non_empty_fields={"content"})
+            result = await repo_list(
+                "note", non_null_fields={"content"}, non_empty_fields={"content"}
+            )
 
         items["notes"] = [str(item["id"]) for item in result] if result else []
         logger.info(f"Collected {len(items['notes'])} notes for rebuild")
@@ -528,10 +535,17 @@ async def collect_items_for_rebuild(
     if include_insights:
         if mode == "existing":
             # Query insights with embeddings
-            result = [{"id": rid} for rid in await record_ids_with_embeddings("source_insight")]
+            result = [
+                {"id": rid}
+                for rid in await record_ids_with_embeddings("source_insight")
+            ]
         else:  # mode == "all"
             # Query all insights with non-empty content
-            result = await repo_list("source_insight", non_null_fields={"content"}, non_empty_fields={"content"})
+            result = await repo_list(
+                "source_insight",
+                non_null_fields={"content"},
+                non_empty_fields={"content"},
+            )
 
         items["insights"] = [str(item["id"]) for item in result] if result else []
         logger.info(f"Collected {len(items['insights'])} insights for rebuild")

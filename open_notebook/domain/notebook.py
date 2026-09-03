@@ -6,13 +6,14 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from open_notebook.database.record_id import RecordID
+from command_queue import submit_command
 from open_notebook.database.embeddings import (
     count_source_embeddings,
     delete_source_embeddings,
     text_search_pg,
     vector_search_pg,
 )
+from open_notebook.database.record_id import RecordID
 from open_notebook.database.repository import (
     ensure_record_id,
     repo_delete_relations,
@@ -24,7 +25,6 @@ from open_notebook.database.repository import (
 )
 from open_notebook.domain.base import ObjectModel
 from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
-from command_queue import submit_command
 
 
 class Notebook(ObjectModel):
@@ -161,7 +161,9 @@ class Notebook(ObjectModel):
             )
             return [ChatSession(**row) for row in rows]
         except Exception as e:
-            logger.error(f"Error fetching chat sessions for notebook {self.id}: {str(e)}")
+            logger.error(
+                f"Error fetching chat sessions for notebook {self.id}: {str(e)}"
+            )
             logger.exception(e)
             raise DatabaseOperationError(e)
 
@@ -213,7 +215,9 @@ class Notebook(ObjectModel):
                             await (await Source.get(source_id)).delete()
                             deleted_sources += 1
                         except Exception as e:
-                            logger.warning(f"Failed to delete exclusive source {source_id}: {e}")
+                            logger.warning(
+                                f"Failed to delete exclusive source {source_id}: {e}"
+                            )
                     else:
                         unlinked_sources += 1
             else:
@@ -266,7 +270,9 @@ class SourceInsight(ObjectModel):
         if not grouped:
             return grouped
         try:
-            rows = await repo_list("source_insight", in_filters={"source": grouped.keys()})
+            rows = await repo_list(
+                "source_insight", in_filters={"source": grouped.keys()}
+            )
         except Exception as e:
             logger.error(f"Error batch-fetching insights for sources: {str(e)}")
             logger.exception(e)
@@ -375,7 +381,9 @@ class Source(ObjectModel):
         # Callers looping over many sources can batch-fetch insights up front
         # via SourceInsight.get_for_sources() and pass them in here, instead
         # of paying a separate query per source.
-        insight_objects = insights if insights is not None else await self.get_insights()
+        insight_objects = (
+            insights if insights is not None else await self.get_insights()
+        )
         insights = [insight.model_dump() for insight in insight_objects]
         if context_size == "long":
             return dict(
@@ -507,7 +515,9 @@ class Source(ObjectModel):
             return str(command_id)
 
         except Exception as e:
-            logger.exception(f"Error submitting create_insight for source {self.id}: {e}")
+            logger.exception(
+                f"Error submitting create_insight for source {self.id}: {e}"
+            )
             raise DatabaseOperationError(e)
 
     def _prepare_save_data(self) -> dict:

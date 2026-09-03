@@ -5,6 +5,7 @@ from typing import Optional
 
 from loguru import logger
 
+from command_queue import CommandInput, CommandOutput, command
 from open_notebook.config import PODCASTS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_list
 from open_notebook.podcasts.audio_paths import to_relative_audio_path
@@ -15,7 +16,7 @@ from open_notebook.podcasts.models import (
     _resolve_model_config,
 )
 from open_notebook.utils.model_utils import full_model_dump
-from command_queue import CommandInput, CommandOutput, command
+
 
 def _load_podcast_creator():
     """Load podcast_creator only when podcast generation is requested.
@@ -36,7 +37,9 @@ def _load_podcast_creator():
     return configure, create_podcast
 
 
-def build_episode_output_dir(podcasts_folder: str = PODCASTS_FOLDER) -> tuple[str, Path]:
+def build_episode_output_dir(
+    podcasts_folder: str = PODCASTS_FOLDER,
+) -> tuple[str, Path]:
     """Build a filesystem-safe output directory path for a podcast episode.
 
     Uses a UUID as the directory name so the path is safe regardless of
@@ -139,15 +142,21 @@ async def generate_podcast_command(
             )
 
         # 3. Resolve model configs with credentials
-        outline_provider, outline_model_name, outline_config = (
-            await episode_profile.resolve_outline_config()
-        )
-        transcript_provider, transcript_model_name, transcript_config = (
-            await episode_profile.resolve_transcript_config()
-        )
-        tts_provider, tts_model_name, tts_config = (
-            await speaker_profile.resolve_tts_config()
-        )
+        (
+            outline_provider,
+            outline_model_name,
+            outline_config,
+        ) = await episode_profile.resolve_outline_config()
+        (
+            transcript_provider,
+            transcript_model_name,
+            transcript_config,
+        ) = await episode_profile.resolve_transcript_config()
+        (
+            tts_provider,
+            tts_model_name,
+            tts_config,
+        ) = await speaker_profile.resolve_tts_config()
 
         logger.info(
             f"Resolved models - outline: {outline_provider}/{outline_model_name}, "

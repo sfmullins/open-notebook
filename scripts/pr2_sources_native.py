@@ -40,7 +40,6 @@ one(
     "repository import",
 )
 
-# Remove Surreal-specific sort implementation constants.
 block(
     "SOURCE_SORT_FIELDS = {\n",
     "\n\nasync def _stamp_source_view(source_id: str) -> None:\n",
@@ -133,7 +132,6 @@ async def get_sources(
         else:
             rows = await repo_list("source")
 
-        # Compute fields that previously came from nested SurrealQL subqueries.
         for row in rows:
             source_id = str(row.get("id", ""))
             row["insights_count"] = await repo_count(
@@ -144,7 +142,6 @@ async def get_sources(
             )
             row["type"] = _source_type(row)
 
-        # Preserve deterministic id tie-breaking, then apply requested sort.
         rows.sort(key=lambda row: str(row.get("id", "")))
         rows.sort(
             key=lambda row: (
@@ -248,6 +245,9 @@ one(
     "retry source notebook relations",
 )
 
+text = text.replace(
+    "let SurrealDB generate the ID", "let the repository generate the ID"
+)
 PATH.write_text(text, encoding="utf-8")
 
 for rel in (

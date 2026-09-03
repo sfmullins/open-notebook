@@ -151,3 +151,57 @@ jobs:
       - name: Stop legacy fixture
         if: always()
         run: docker rm -f surreal-parity || true
+
+  image-sbom-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build final runtime image
+        run: docker build --target runtime -t open-notebook:pr2 .
+      - name: Generate full-image SBOM with pinned Syft 1.51.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/out" \
+            anchore/syft:v1.51.0 \
+            docker:open-notebook:pr2 -o syft-json=/out/sbom.syft.json
+      - name: Print discovered package types and licences
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from collections import defaultdict
+          data = json.load(open('sbom.syft.json', encoding='utf-8'))
+          found = defaultdict(set)
+          unknown = []
+          for artifact in data.get('artifacts', []):
+              kind = artifact.get('type') or 'unknown-type'
+              values = []
+              for item in artifact.get('licenses') or []:
+                  if isinstance(item, str):
+                      values.append(item)
+                  elif isinstance(item, dict):
+                      value = item.get('spdxExpression') or item.get('value')
+                      if value:
+                          values.append(value)
+              if not values:
+                  unknown.append((kind, artifact.get('name'), artifact.get('version')))
+                  values = ['NOASSERTION']
+              for value in values:
+                  found[kind].add(value)
+          for kind in sorted(found):
+              print(f'[{kind}]')
+              for value in sorted(found[kind]):
+                  print(f'  {value}')
+          print(f'Packages without detected licence: {len(unknown)}')
+          for item in unknown[:100]:
+              print('  UNKNOWN', *item)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr2-sbom-inventory
+          path: sbom.syft.json
+          if-no-files-found: error

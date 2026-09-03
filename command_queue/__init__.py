@@ -15,7 +15,7 @@ import socket
 import threading
 from contextlib import suppress
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Dict, Optional, Type
+from typing import Any, Awaitable, Callable, Coroutine, Dict, Optional, Type
 from uuid import UUID, uuid4
 
 from loguru import logger
@@ -66,7 +66,7 @@ class _RegisteredCommand:
 
 
 _REGISTRY: dict[tuple[str, str], _RegisteredCommand] = {}
-def _run_async_submission(factory: Callable[[], Awaitable[str]]) -> str:
+def _run_async_submission(factory: Callable[[], Coroutine[Any, Any, str]]) -> str:
     """Run an async submission from either sync or async-hosted call sites.
 
     Legacy domain APIs still expose a synchronous ``submit_command`` helper.

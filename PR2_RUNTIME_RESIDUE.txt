@@ -1,6 +1,195 @@
 # PR2 residue inventory
 
 ## repo_query
+./tests/test_podcast_episode_model_resolution.py:88:            "open_notebook.ai.models.repo_query", new=AsyncMock()
+./tests/test_podcast_episode_model_resolution.py:101:            "open_notebook.ai.models.repo_query",
+./tests/test_podcast_episode_model_resolution.py:117:            "open_notebook.ai.models.repo_query", new=AsyncMock(return_value=[])
+./tests/test_podcast_episode_model_resolution.py:129:            "open_notebook.ai.models.repo_query",
+./tests/test_podcast_episode_model_resolution.py:138:            "open_notebook.ai.models.repo_query",
+./tests/test_sources_api.py:147:    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+./tests/test_sources_api.py:150:        self, mock_get, mock_repo_query, mock_submit, client
+./tests/test_sources_api.py:164:        mock_repo_query.return_value = ["notebook:1"]
+./tests/test_sources_api.py:173:        called_query = mock_repo_query.await_args.args[0]
+./tests/test_sources_api.py:183:    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+./tests/test_sources_api.py:186:        self, mock_get, mock_repo_query, client
+./tests/test_sources_api.py:192:        mock_repo_query.return_value = []  # genuinely no notebooks
+./tests/test_sources_api.py:231:    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+./tests/test_sources_api.py:243:    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+./tests/test_error_message_sanitization.py:31:            "api.routers.sources.repo_query",
+./tests/test_typed_exceptions_reach_handlers.py:45:    ("sources", "api.routers.sources.repo_query", "GET", "/api/sources", None),
+./tests/test_typed_exceptions_reach_handlers.py:46:    ("notebooks", "api.routers.notebooks.repo_query", "GET", "/api/notebooks", None),
+./tests/test_typed_exceptions_reach_handlers.py:52:    ("embedding_rebuild", "api.routers.embedding_rebuild.repo_query", "POST", "/api/embeddings/rebuild", {"mode": "existing"}),
+./tests/test_typed_exceptions_reach_handlers.py:103:            "api.routers.sources.repo_query",
+./tests/test_typed_exceptions_reach_handlers.py:124:            "api.routers.sources.repo_query",
+./tests/test_postgres_query_compat.py:10:from open_notebook.database.repository import repo_query, repo_relate, repo_upsert
+./tests/test_postgres_query_compat.py:55:    result = await repo_query(
+./tests/test_postgres_query_compat.py:93:    sources = await repo_query(
+./tests/test_postgres_query_compat.py:102:    notes = await repo_query(
+./tests/test_postgres_query_compat.py:127:    rows = await repo_query(
+./tests/test_postgres_repository.py:9:from open_notebook.database.repository import repo_query, repo_relate, repo_upsert
+./tests/test_postgres_repository.py:42:    loaded = await repo_query(
+./tests/test_postgres_repository.py:64:    rows = await repo_query(
+./tests/test_config_endpoint_no_leak.py:35:            "api.routers.config.repo_query",
+./tests/test_config_endpoint_no_leak.py:51:            "api.routers.config.repo_query",
+./tests/test_config_endpoint_no_leak.py:63:            "api.routers.config.repo_query",
+./tests/test_podcast_speaker_profile.py:135:            "open_notebook.podcasts.models.repo_query", new_callable=AsyncMock
+./tests/test_podcast_speaker_profile.py:163:            "open_notebook.podcasts.models.repo_query", new_callable=AsyncMock
+./tests/test_podcast_speaker_profile.py:329:        async def fake_repo_query(query, *args, **kwargs):
+./tests/test_podcast_speaker_profile.py:361:                "commands.podcast_commands.repo_query", new=fake_repo_query
+./tests/test_models_api.py:19:    @patch("open_notebook.database.repository.repo_query")
+./tests/test_models_api.py:22:        self, mock_save, mock_repo_query, client
+./tests/test_models_api.py:25:        # Mock repo_query to return a duplicate model
+./tests/test_models_api.py:26:        mock_repo_query.return_value = [
+./tests/test_models_api.py:48:    @patch("open_notebook.database.repository.repo_query")
+./tests/test_models_api.py:51:        self, mock_save, mock_repo_query, client
+./tests/test_models_api.py:54:        # Mock repo_query to return a duplicate model (case-insensitive match)
+./tests/test_models_api.py:55:        mock_repo_query.return_value = [
+./tests/test_models_api.py:77:    @patch("open_notebook.database.repository.repo_query")
+./tests/test_models_api.py:79:        self, mock_repo_query, client
+./tests/test_models_api.py:84:        # Mock repo_query to return empty (no duplicate found for different provider)
+./tests/test_models_api.py:85:        mock_repo_query.return_value = []
+./tests/test_models_api.py:99:    @patch("open_notebook.database.repository.repo_query")
+./tests/test_models_api.py:100:    async def test_create_same_model_name_different_type(self, mock_repo_query, client):
+./tests/test_models_api.py:104:        # Mock repo_query to return empty (no duplicate found for different type)
+./tests/test_models_api.py:105:        mock_repo_query.return_value = []
+./tests/test_models_api.py:526:            "open_notebook.database.repository.repo_query",
+./tests/test_recently_viewed_api.py:20:    @patch("api.routers.notebooks.repo_query", new_callable=AsyncMock)
+./tests/test_recently_viewed_api.py:22:        self, mock_repo_query, client
+./tests/test_recently_viewed_api.py:24:        mock_repo_query.side_effect = [
+./tests/test_recently_viewed_api.py:59:    @patch("api.routers.notebooks.repo_query", new_callable=AsyncMock)
+./tests/test_recently_viewed_api.py:60:    def test_recently_viewed_honors_limit(self, mock_repo_query, client):
+./tests/test_recently_viewed_api.py:61:        mock_repo_query.side_effect = [
+./tests/test_recently_viewed_api.py:94:        assert mock_repo_query.await_args_list[0].args[1] == {"limit": 2}
+./tests/test_recently_viewed_api.py:95:        assert mock_repo_query.await_args_list[1].args[1] == {"limit": 2}
+./tests/test_recently_viewed_api.py:97:    @patch("api.routers.notebooks.repo_query", new_callable=AsyncMock)
+./tests/test_recently_viewed_api.py:98:    def test_recently_viewed_empty_when_no_view_history(self, mock_repo_query, client):
+./tests/test_recently_viewed_api.py:99:        mock_repo_query.side_effect = [[], []]
+./tests/test_recently_viewed_api.py:106:    @patch("api.routers.notebooks.repo_query", new_callable=AsyncMock)
+./tests/test_recently_viewed_api.py:107:    def test_get_notebook_stamps_last_viewed_at(self, mock_repo_query, client):
+./tests/test_recently_viewed_api.py:108:        mock_repo_query.side_effect = [
+./tests/test_recently_viewed_api.py:129:            in (mock_repo_query.await_args_list[1].args[0])
+./tests/test_recently_viewed_api.py:134:    @patch("api.routers.sources.repo_query", new_callable=AsyncMock)
+./tests/test_recently_viewed_api.py:136:        self, mock_repo_query, mock_get_source, mock_chunks, client
+./tests/test_recently_viewed_api.py:147:        mock_repo_query.side_effect = [[], []]
+./tests/test_recently_viewed_api.py:154:            in (mock_repo_query.await_args_list[0].args[0])
+./tests/test_recently_viewed_api.py:157:    @patch("api.routers.notebooks.repo_query", new_callable=AsyncMock)
+./tests/test_recently_viewed_api.py:159:        self, mock_repo_query, client
+./tests/test_recently_viewed_api.py:161:        mock_repo_query.side_effect = [
+./tests/test_podcast_job_status_batching.py:38:            "open_notebook.podcasts.models.repo_query", new=AsyncMock()
+./tests/test_podcast_job_status_batching.py:51:            "open_notebook.podcasts.models.repo_query",
+./tests/test_podcast_job_status_batching.py:67:            "open_notebook.podcasts.models.repo_query",
+./tests/test_podcast_job_status_batching.py:76:            "open_notebook.podcasts.models.repo_query", new=AsyncMock(return_value=[])
+./tests/test_domain.py:249:                "open_notebook.domain.notebook.repo_query",
+./tests/test_chat_routers_characterization.py:82:@patch("api.routers.chat.repo_query", new_callable=AsyncMock)
+./tests/test_chat_routers_characterization.py:99:@patch("api.routers.chat.repo_query", new_callable=AsyncMock)
+./tests/test_chat_routers_characterization.py:129:@patch("api.routers.chat.repo_query", new_callable=AsyncMock)
+./tests/test_chat_routers_characterization.py:162:@patch("api.routers.chat.repo_query", new_callable=AsyncMock)
+./tests/test_chat_routers_characterization.py:210:@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+./tests/test_chat_routers_characterization.py:228:@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+./tests/test_chat_routers_characterization.py:252:@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+./tests/test_chat_routers_characterization.py:271:@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+./tests/test_chat_routers_characterization.py:293:@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+./tests/test_search_api.py:56:                notebook_module, "repo_query", new_callable=AsyncMock, side_effect=overflow
+./tests/test_search_api.py:78:                notebook_module, "repo_query", new_callable=AsyncMock, side_effect=overflow
+./tests/test_search_api.py:99:            "repo_query",
+./docs/7-DEVELOPMENT/security.md:26:result = await repo_query(
+./docs/7-DEVELOPMENT/security.md:36:result = await repo_query(f"SELECT * FROM source WHERE id = {source_id}")
+./docs/7-DEVELOPMENT/architecture.md:523:- `repo_query()`: Execute SurrealQL queries
+./docs/7-DEVELOPMENT/architecture.md:540:- Database queries: `await repo_query(...)`
+./docs/7-DEVELOPMENT/architecture.md:646:result = await repo_query(
+./docs/7-DEVELOPMENT/testing.md:147:    active = await repo_query(
+./docs/7-DEVELOPMENT/code-standards.md:244:from open_notebook.database.repository import repo_create, repo_query, repo_update
+./docs/7-DEVELOPMENT/code-standards.md:254:    return await repo_query(
+./docs/7-DEVELOPMENT/code-standards.md:324:    notebook_data = await repo_query(
+./docs/7-DEVELOPMENT/code-standards.md:331:    sources_data = await repo_query(
+./api/routers/embedding_rebuild.py:12:from open_notebook.database.repository import repo_query
+./api/routers/embedding_rebuild.py:44:                result = await repo_query(
+./api/routers/embedding_rebuild.py:55:                result = await repo_query(
+./api/routers/embedding_rebuild.py:66:                result = await repo_query(
+./api/routers/embedding_rebuild.py:70:                result = await repo_query(
+./api/routers/embedding_rebuild.py:81:                result = await repo_query(
+./api/routers/embedding_rebuild.py:85:                result = await repo_query(
+./api/routers/chat.py:16:from open_notebook.database.repository import ensure_record_id, repo_query
+./api/routers/chat.py:202:        notebook_query = await repo_query(
+./api/routers/chat.py:254:        notebook_query = await repo_query(
+./api/routers/chat.py:312:        notebook_query = await repo_query(
+./api/routers/credentials.py:58:from open_notebook.database.repository import ensure_record_id, repo_delete, repo_query
+./api/routers/credentials.py:331:            linked = await repo_query(
+./api/routers/credentials.py:343:                        await repo_query(
+./api/routers/models.py:218:        from open_notebook.database.repository import repo_query
+./api/routers/models.py:220:        existing = await repo_query(
+./api/routers/models.py:677:        from open_notebook.database.repository import repo_query
+./api/routers/models.py:679:        models = await repo_query(
+./api/routers/models.py:767:        from open_notebook.database.repository import repo_query
+./api/routers/models.py:773:        all_models = await repo_query(
+./api/routers/config.py:10:from open_notebook.database.repository import repo_query
+./api/routers/config.py:110:        result = await asyncio.wait_for(repo_query("RETURN 1"), timeout=2.0)
+./api/routers/sources.py:35:from open_notebook.database.repository import ensure_record_id, repo_query
+./api/routers/sources.py:109:        await repo_query(
+./api/routers/sources.py:317:        result = await repo_query(query, params)
+./api/routers/sources.py:779:        notebooks_query = await repo_query(
+./api/routers/sources.py:962:        references = await repo_query(
+./api/routers/notebooks.py:14:from open_notebook.database.repository import ensure_record_id, repo_query
+./api/routers/notebooks.py:33:        await repo_query(
+./api/routers/notebooks.py:102:        result = await repo_query(query)
+./api/routers/notebooks.py:171:        notebooks = await repo_query(
+./api/routers/notebooks.py:181:        sources = await repo_query(
+./api/routers/notebooks.py:253:        result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
+./api/routers/notebooks.py:305:        result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
+./api/routers/notebooks.py:355:        existing_ref = await repo_query(
+./api/routers/notebooks.py:365:            await repo_query(
+./api/routers/notebooks.py:397:        await repo_query(
+./api/routers/source_chat.py:19:from open_notebook.database.repository import ensure_record_id, repo_query
+./api/routers/source_chat.py:137:        relations = await repo_query(
+./api/routers/source_chat.py:148:                session_result = await repo_query(
+./api/routers/_chat_shared.py:20:from open_notebook.database.repository import ensure_record_id, repo_query
+./api/routers/_chat_shared.py:69:    relation_query = await repo_query(
+./api/credentials_service.py:722:    from open_notebook.database.repository import repo_query
+./api/credentials_service.py:725:    existing_models = await repo_query(
+./api/credentials_service.py:816:                from open_notebook.database.repository import repo_query
+./api/credentials_service.py:818:                provider_models = await repo_query(
+./api/credentials_service.py:877:    from open_notebook.database.repository import repo_query
+./api/credentials_service.py:907:            provider_models = await repo_query(
+./commands/podcast_commands.py:9:from open_notebook.database.repository import ensure_record_id, repo_query
+./commands/podcast_commands.py:146:        episode_profiles = await repo_query("SELECT * FROM episode_profile")
+./commands/podcast_commands.py:147:        speaker_profiles = await repo_query("SELECT * FROM speaker_profile")
+./commands/embedding_commands.py:16:from open_notebook.database.repository import ensure_record_id, repo_insert, repo_query
+./commands/embedding_commands.py:126:    await repo_query(
+./commands/embedding_commands.py:336:        await repo_query(
+./commands/embedding_commands.py:436:        result = await repo_query(
+./commands/embedding_commands.py:518:            result = await repo_query(
+./commands/embedding_commands.py:534:            result = await repo_query(
+./commands/embedding_commands.py:544:            result = await repo_query(
+./commands/embedding_commands.py:549:            result = await repo_query(
+./commands/embedding_commands.py:559:            result = await repo_query(
+./commands/embedding_commands.py:564:            result = await repo_query(
+./open_notebook/domain/notebook.py:10:from open_notebook.database.repository import ensure_record_id, repo_query
+./open_notebook/domain/notebook.py:33:            srcs = await repo_query(
+./open_notebook/domain/notebook.py:55:            srcs = await repo_query(
+./open_notebook/domain/notebook.py:138:            srcs = await repo_query(
+./open_notebook/domain/notebook.py:174:            note_result = await repo_query(
+./open_notebook/domain/notebook.py:183:            source_counts = await repo_query(
+./open_notebook/domain/notebook.py:241:            await repo_query(
+./open_notebook/domain/notebook.py:250:                source_counts = await repo_query(
+./open_notebook/domain/notebook.py:276:                source_result = await repo_query(
+./open_notebook/domain/notebook.py:283:            await repo_query(
+./open_notebook/domain/notebook.py:329:            src = await repo_query(
+./open_notebook/domain/notebook.py:363:            result = await repo_query(
+./open_notebook/domain/notebook.py:378:            src = await repo_query(
+./open_notebook/domain/notebook.py:498:            result = await repo_query(
+./open_notebook/domain/notebook.py:514:            result = await repo_query(
+./open_notebook/domain/notebook.py:664:            await repo_query(
+./open_notebook/domain/notebook.py:668:            await repo_query(
+./open_notebook/domain/notebook.py:773:        search_results = await repo_query(
+./open_notebook/domain/notebook.py:823:        search_results = await repo_query(
+./open_notebook/ai/model_discovery.py:19:from open_notebook.database.repository import repo_query
+./open_notebook/ai/model_discovery.py:934:        existing_models = await repo_query(
+./open_notebook/ai/model_discovery.py:1014:    result = await repo_query(
+./open_notebook/podcasts/models.py:7:from open_notebook.database.repository import ensure_record_id, repo_query
+./open_notebook/podcasts/models.py:121:        result = await repo_query(
+./open_notebook/podcasts/models.py:189:        result = await repo_query(
+./open_notebook/podcasts/models.py:209:            result = await repo_query(
+./open_notebook/podcasts/models.py:310:            result = await repo_query(
 
 ## legacy_query_compat
 
@@ -9,12 +198,236 @@
 ## surreal-commands
 
 ## SURREAL_
+./examples/docker-compose-single.yml:15:      - SURREAL_URL=ws://localhost:8000/rpc
+./docker-compose.override.yml.example:12:# and put it behind a firewall or an SSH tunnel and set SURREAL_USER /
+./docker-compose.override.yml.example:13:# SURREAL_PASSWORD to real credentials first.
+./tests/test_proxy.py:13:_DB_VARS = ("SURREAL_URL", "SURREAL_ADDRESS")
+./tests/test_proxy.py:90:    monkeypatch.setenv("SURREAL_URL", "ws://db.internal.corp:8000/rpc")
+./tests/test_proxy.py:101:    monkeypatch.setenv("SURREAL_ADDRESS", "10.1.2.3:8000")
+./tests/test_proxy.py:107:    monkeypatch.setenv("SURREAL_URL", "ws://from-url:8000/rpc")
+./tests/test_proxy.py:108:    monkeypatch.setenv("SURREAL_ADDRESS", "from-address")
+./tests/test_proxy.py:116:    monkeypatch.setenv("SURREAL_URL", "::not a url::")
+./tests/test_proxy.py:125:    monkeypatch.setenv("SURREAL_URL", "ws://surrealdb:8000/rpc")
+./tests/test_credential_provider_validation.py:213:        `.env` (SURREAL_URL + encryption key set) wrote a "Test" credential to
+./.github/RELEASE_PROCESS.md:174:  actually points at (`SURREAL_URL`) before exporting data.
+./.github/ISSUE_TEMPLATE/installation_issue.yml:98:        SURREAL_URL=ws://surrealdb:8000/rpc
+./.github/ISSUE_TEMPLATE/installation_issue.yml:99:        SURREAL_USER=root
+./.github/ISSUE_TEMPLATE/installation_issue.yml:100:        SURREAL_PASSWORD=***REDACTED***
+./README.md:120:    # exposing this instance to a network, set SURREAL_USER / SURREAL_PASSWORD
+./README.md:125:    command: ["start", "--log", "info", "--user", "${SURREAL_USER:-root}", "--pass", "${SURREAL_PASSWORD:-root}", "rocksdb:/mydata/mydatabase.db"]
+./README.md:137:      - SURREAL_EXPERIMENTAL_GRAPHQL=true
+./README.md:151:      # Database connection. SURREAL_USER / SURREAL_PASSWORD default to root:root
+./README.md:154:      - SURREAL_URL=ws://surrealdb:8000/rpc
+./README.md:155:      - SURREAL_USER=${SURREAL_USER:-root}
+./README.md:156:      - SURREAL_PASSWORD=${SURREAL_PASSWORD:-root}
+./README.md:157:      - SURREAL_NAMESPACE=open_notebook
+./README.md:158:      - SURREAL_DATABASE=open_notebook
+./.agents/skills/release/runbook.md:26:# 1. Find which SurrealDB instance dev actually uses — read SURREAL_URL in .env
+./.agents/skills/release/runbook.md:28:#    be it), and note SURREAL_DATABASE.
+./docs/7-DEVELOPMENT/development-setup.md:50:SURREAL_URL=ws://localhost:8000/rpc
+./docs/7-DEVELOPMENT/development-setup.md:51:SURREAL_USER=root
+./docs/7-DEVELOPMENT/development-setup.md:52:SURREAL_PASSWORD=password
+./docs/7-DEVELOPMENT/development-setup.md:53:SURREAL_NAMESPACE=open_notebook
+./docs/7-DEVELOPMENT/development-setup.md:54:SURREAL_DATABASE=development
+./docs/5-CONFIGURATION/database.md:17:SURREAL_URL="ws://surrealdb:8000/rpc"
+./docs/5-CONFIGURATION/database.md:18:SURREAL_USER="root"
+./docs/5-CONFIGURATION/database.md:19:SURREAL_PASSWORD="root"
+./docs/5-CONFIGURATION/database.md:20:SURREAL_NAMESPACE="open_notebook"
+./docs/5-CONFIGURATION/database.md:21:SURREAL_DATABASE="open_notebook"
+./docs/5-CONFIGURATION/database.md:29:SURREAL_URL="ws://your-machine-ip:8000/rpc" #or host.docker.internal
+./docs/5-CONFIGURATION/database.md:30:SURREAL_USER="root"
+./docs/5-CONFIGURATION/database.md:31:SURREAL_PASSWORD="root"
+./docs/5-CONFIGURATION/database.md:32:SURREAL_NAMESPACE="open_notebook"
+./docs/5-CONFIGURATION/database.md:33:SURREAL_DATABASE="open_notebook"
+./docs/5-CONFIGURATION/database.md:43:SURREAL_URL="ws://localhost:8000/rpc"
+./docs/5-CONFIGURATION/database.md:44:SURREAL_USER="root"
+./docs/5-CONFIGURATION/database.md:45:SURREAL_PASSWORD="root"
+./docs/5-CONFIGURATION/database.md:46:SURREAL_NAMESPACE="open_notebook"
+./docs/5-CONFIGURATION/database.md:47:SURREAL_DATABASE="open_notebook"
+./docs/5-CONFIGURATION/index.md:80:SURREAL_URL=ws://surrealdb:8000/rpc
+./docs/5-CONFIGURATION/index.md:81:SURREAL_USER=root
+./docs/5-CONFIGURATION/index.md:82:SURREAL_PASSWORD=root  # Change in production!
+./docs/5-CONFIGURATION/index.md:83:SURREAL_NAMESPACE=open_notebook
+./docs/5-CONFIGURATION/index.md:84:SURREAL_DATABASE=open_notebook
+./docs/5-CONFIGURATION/index.md:87:> The only thing that is critical to not miss is the hostname in the `SURREAL_URL`. Check what URL to use based on your deployment, [here](database.md).
+./docs/5-CONFIGURATION/index.md:299:| Wrong database URL | Can't start API | Check SURREAL_URL format |
+./docs/5-CONFIGURATION/advanced.md:15:SURREAL_COMMANDS_MAX_TASKS=5
+./docs/5-CONFIGURATION/advanced.md:29:SURREAL_COMMANDS_RETRY_WAIT_STRATEGY=exponential_jitter
+./docs/5-CONFIGURATION/advanced.md:169:      - SURREAL_URL=ws://surrealdb:8001/rpc  # Update connection URL
+./docs/5-CONFIGURATION/advanced.md:224:SURREAL_USER=your_secure_username
+./docs/5-CONFIGURATION/advanced.md:225:SURREAL_PASSWORD=$(openssl rand -base64 32)  # Generate secure password
+./docs/5-CONFIGURATION/advanced.md:307:SURREAL_URL
+./docs/5-CONFIGURATION/advanced.md:308:SURREAL_USER
+./docs/5-CONFIGURATION/advanced.md:309:SURREAL_PASSWORD
+./docs/5-CONFIGURATION/advanced.md:310:SURREAL_NAMESPACE
+./docs/5-CONFIGURATION/advanced.md:311:SURREAL_DATABASE
+./docs/5-CONFIGURATION/advanced.md:316:SURREAL_COMMANDS_MAX_TASKS
+./docs/5-CONFIGURATION/advanced.md:317:SURREAL_COMMANDS_RETRY_ENABLED
+./docs/5-CONFIGURATION/advanced.md:318:SURREAL_COMMANDS_RETRY_MAX_ATTEMPTS
+./docs/5-CONFIGURATION/advanced.md:319:SURREAL_COMMANDS_RETRY_WAIT_STRATEGY
+./docs/5-CONFIGURATION/advanced.md:320:SURREAL_COMMANDS_RETRY_WAIT_MIN
+./docs/5-CONFIGURATION/advanced.md:321:SURREAL_COMMANDS_RETRY_WAIT_MAX
+./docs/5-CONFIGURATION/advanced.md:370:python -c "import os; print(os.getenv('SURREAL_URL'))"
+./docs/5-CONFIGURATION/advanced.md:381:SURREAL_COMMANDS_MAX_TASKS=2
+./docs/5-CONFIGURATION/advanced.md:391:SURREAL_COMMANDS_MAX_TASKS
+./docs/5-CONFIGURATION/advanced.md:394:SURREAL_COMMANDS_MAX_TASKS=5
+./docs/5-CONFIGURATION/advanced.md:404:SURREAL_COMMANDS_RETRY_MAX_ATTEMPTS=3
+./docs/5-CONFIGURATION/advanced.md:411:SURREAL_COMMANDS_MAX_TASKS=3
+./docs/5-CONFIGURATION/advanced.md:414:SURREAL_COMMANDS_RETRY_WAIT_STRATEGY=exponential_jitter
+./docs/5-CONFIGURATION/environment-reference.md:28:| `SURREAL_URL` | Yes | ws://surrealdb:8000/rpc | SurrealDB WebSocket connection URL |
+./docs/5-CONFIGURATION/environment-reference.md:29:| `SURREAL_USER` | Yes | root | SurrealDB username |
+./docs/5-CONFIGURATION/environment-reference.md:30:| `SURREAL_PASSWORD` | Yes | root | SurrealDB password |
+./docs/5-CONFIGURATION/environment-reference.md:31:| `SURREAL_NAMESPACE` | Yes | open_notebook | SurrealDB namespace |
+./docs/5-CONFIGURATION/environment-reference.md:32:| `SURREAL_DATABASE` | Yes | open_notebook | SurrealDB database name |
+./docs/5-CONFIGURATION/environment-reference.md:40:| `SURREAL_COMMANDS_RETRY_ENABLED` | No | true | Enable retries on failure |
+./docs/5-CONFIGURATION/environment-reference.md:41:| `SURREAL_COMMANDS_RETRY_MAX_ATTEMPTS` | No | 3 | Maximum retry attempts |
+./docs/5-CONFIGURATION/environment-reference.md:42:| `SURREAL_COMMANDS_RETRY_WAIT_STRATEGY` | No | exponential_jitter | Retry wait strategy (exponential_jitter/exponential/fixed/random) |
+./docs/5-CONFIGURATION/environment-reference.md:43:| `SURREAL_COMMANDS_RETRY_WAIT_MIN` | No | 1 | Minimum wait time between retries (seconds) |
+./docs/5-CONFIGURATION/environment-reference.md:44:| `SURREAL_COMMANDS_RETRY_WAIT_MAX` | No | 30 | Maximum wait time between retries (seconds) |
+./docs/5-CONFIGURATION/environment-reference.md:189:SURREAL_URL=ws://surrealdb:8000/rpc
+./docs/5-CONFIGURATION/environment-reference.md:190:SURREAL_USER=root
+./docs/5-CONFIGURATION/environment-reference.md:191:SURREAL_PASSWORD=password
+./docs/5-CONFIGURATION/environment-reference.md:192:SURREAL_NAMESPACE=open_notebook
+./docs/5-CONFIGURATION/environment-reference.md:193:SURREAL_DATABASE=open_notebook
+./docs/5-CONFIGURATION/environment-reference.md:202:SURREAL_USER=production_user
+./docs/5-CONFIGURATION/environment-reference.md:203:SURREAL_PASSWORD=secure_password
+./docs/5-CONFIGURATION/environment-reference.md:223:SURREAL_COMMANDS_MAX_TASKS=10
+./docs/5-CONFIGURATION/environment-reference.md:269:- [ ] Set database credentials (`SURREAL_*`)
+./docs/5-CONFIGURATION/environment-reference.md:276:- [ ] Change `SURREAL_PASSWORD` in production
+./docs/6-TROUBLESHOOTING/index.md:217:SURREAL_COMMANDS_MAX_TASKS=2
+./docs/6-TROUBLESHOOTING/ai-chat-issues.md:235:# Reduce: SURREAL_COMMANDS_MAX_TASKS=2
+./docs/6-TROUBLESHOOTING/connection-issues.md:160:SURREAL_COMMANDS_MAX_TASKS=2
+./docs/6-TROUBLESHOOTING/connection-issues.md:239:SURREAL_COMMANDS_RETRY_ENABLED=true
+./docs/6-TROUBLESHOOTING/connection-issues.md:240:SURREAL_COMMANDS_RETRY_MAX_ATTEMPTS=5
+./docs/6-TROUBLESHOOTING/connection-issues.md:241:SURREAL_COMMANDS_RETRY_WAIT_STRATEGY=exponential_jitter
+./docs/6-TROUBLESHOOTING/connection-issues.md:250:SURREAL_COMMANDS_MAX_TASKS=2
+./docs/6-TROUBLESHOOTING/quick-fixes.md:277:SURREAL_COMMANDS_MAX_TASKS=2
+./docs/0-START-HERE/quick-start-local.md:56:      - SURREAL_URL=ws://surrealdb:8000/rpc
+./docs/0-START-HERE/quick-start-local.md:57:      - SURREAL_USER=root
+./docs/0-START-HERE/quick-start-local.md:58:      - SURREAL_PASSWORD=password
+./docs/0-START-HERE/quick-start-local.md:59:      - SURREAL_NAMESPACE=open_notebook
+./docs/0-START-HERE/quick-start-local.md:60:      - SURREAL_DATABASE=open_notebook
+./docs/0-START-HERE/quick-start-openai.md:45:      - SURREAL_URL=ws://surrealdb:8000/rpc
+./docs/0-START-HERE/quick-start-openai.md:46:      - SURREAL_USER=root
+./docs/0-START-HERE/quick-start-openai.md:47:      - SURREAL_PASSWORD=password
+./docs/0-START-HERE/quick-start-openai.md:48:      - SURREAL_NAMESPACE=open_notebook
+./docs/0-START-HERE/quick-start-openai.md:49:      - SURREAL_DATABASE=open_notebook
+./docs/0-START-HERE/quick-start-cloud.md:47:      - SURREAL_URL=ws://surrealdb:8000/rpc
+./docs/0-START-HERE/quick-start-cloud.md:48:      - SURREAL_USER=root
+./docs/0-START-HERE/quick-start-cloud.md:49:      - SURREAL_PASSWORD=password
+./docs/0-START-HERE/quick-start-cloud.md:50:      - SURREAL_NAMESPACE=open_notebook
+./docs/0-START-HERE/quick-start-cloud.md:51:      - SURREAL_DATABASE=open_notebook
+./docs/0-START-HERE/quick-start-external-ollama.md:69:      - SURREAL_URL=ws://surrealdb:8000/rpc
+./docs/0-START-HERE/quick-start-external-ollama.md:70:      - SURREAL_USER=root
+./docs/0-START-HERE/quick-start-external-ollama.md:71:      - SURREAL_PASSWORD=password
+./docs/0-START-HERE/quick-start-external-ollama.md:72:      - SURREAL_NAMESPACE=open_notebook
+./docs/0-START-HERE/quick-start-external-ollama.md:73:      - SURREAL_DATABASE=open_notebook
+./docs/1-INSTALLATION/single-container.md:32:      - SURREAL_URL=ws://localhost:8000/rpc
+./docs/1-INSTALLATION/single-container.md:33:      - SURREAL_USER=root
+./docs/1-INSTALLATION/single-container.md:34:      - SURREAL_PASSWORD=root
+./docs/1-INSTALLATION/single-container.md:35:      - SURREAL_NAMESPACE=open_notebook
+./docs/1-INSTALLATION/single-container.md:36:      - SURREAL_DATABASE=open_notebook
+./docs/1-INSTALLATION/single-container.md:116:| `SURREAL_URL` | Database | `ws://localhost:8000/rpc` |
+./docs/1-INSTALLATION/single-container.md:117:| `SURREAL_USER` | DB user | `root` |
+./docs/1-INSTALLATION/single-container.md:118:| `SURREAL_PASSWORD` | DB password | `root` |
+./docs/1-INSTALLATION/single-container.md:119:| `SURREAL_NAMESPACE` | DB namespace | `open_notebook` |
+./docs/1-INSTALLATION/single-container.md:120:| `SURREAL_DATABASE` | DB name | `open_notebook` |
+./docs/1-INSTALLATION/windows-native.md:46:   - **CRITICAL:** Change `SURREAL_URL` from `localhost` to `127.0.0.1`:
+./docs/1-INSTALLATION/windows-native.md:49:     SURREAL_URL="ws://127.0.0.1:8000/rpc"
+./docs/1-INSTALLATION/windows-native.md:159:SURREAL_URL="ws://localhost:8000/rpc"
+./docs/1-INSTALLATION/windows-native.md:162:SURREAL_URL="ws://127.0.0.1:8000/rpc"
+./docs/1-INSTALLATION/windows-native.md:217:SURREAL_URL="ws://127.0.0.1:8000/rpc"
+./docs/1-INSTALLATION/windows-native.md:218:SURREAL_USER="root"
+./docs/1-INSTALLATION/windows-native.md:219:SURREAL_PASSWORD="root"
+./docs/1-INSTALLATION/windows-native.md:220:SURREAL_NAMESPACE="open_notebook"
+./docs/1-INSTALLATION/windows-native.md:221:SURREAL_DATABASE="open_notebook"
+./docs/1-INSTALLATION/docker-compose.md:35:    # exposing this instance to a network, set SURREAL_USER / SURREAL_PASSWORD
+./docs/1-INSTALLATION/docker-compose.md:40:    command: ["start", "--log", "info", "--user", "${SURREAL_USER:-root}", "--pass", "${SURREAL_PASSWORD:-root}", "rocksdb:/mydata/mydatabase.db"]
+./docs/1-INSTALLATION/docker-compose.md:52:      - SURREAL_EXPERIMENTAL_GRAPHQL=true
+./docs/1-INSTALLATION/docker-compose.md:66:      # Database connection. SURREAL_USER / SURREAL_PASSWORD default to root:root
+./docs/1-INSTALLATION/docker-compose.md:69:      - SURREAL_URL=ws://surrealdb:8000/rpc
+./docs/1-INSTALLATION/docker-compose.md:70:      - SURREAL_USER=${SURREAL_USER:-root}
+./docs/1-INSTALLATION/docker-compose.md:71:      - SURREAL_PASSWORD=${SURREAL_PASSWORD:-root}
+./docs/1-INSTALLATION/docker-compose.md:72:      - SURREAL_NAMESPACE=open_notebook
+./docs/1-INSTALLATION/docker-compose.md:73:      - SURREAL_DATABASE=open_notebook
+./docs/1-INSTALLATION/docker-compose.md:84:- (Optional) To use database credentials other than the default `root:root`, create a `.env` file next to `docker-compose.yml` with `SURREAL_USER=...` and `SURREAL_PASSWORD=...` — both services pick them up automatically ([.env.example](https://github.com/lfnovo/open-notebook/blob/main/.env.example) shows the full format)
+./docs/1-INSTALLATION/docker-compose.md:209:| `SURREAL_URL` | Database connection | `ws://surrealdb:8000/rpc` |
+./docs/1-INSTALLATION/docker-compose.md:210:| `SURREAL_USER` | Database user | `root` |
+./docs/1-INSTALLATION/docker-compose.md:211:| `SURREAL_PASSWORD` | Database password | `root` |
+./docs/1-INSTALLATION/docker-compose.md:212:| `SURREAL_NAMESPACE` | Database namespace | `open_notebook` |
+./docs/1-INSTALLATION/docker-compose.md:213:| `SURREAL_DATABASE` | Database name | `open_notebook` |
+./.env.example:16:SURREAL_URL=ws://surrealdb:8000/rpc
+./.env.example:20:SURREAL_USER=root
+./.env.example:21:SURREAL_PASSWORD=root
+./.env.example:22:SURREAL_NAMESPACE=open_notebook
+./.env.example:23:SURREAL_DATABASE=open_notebook
+./dev-init.sh:10:SURREAL_PORT=${SURREAL_PORT:-8018}
+./dev-init.sh:11:echo "Checking SurrealDB on port $SURREAL_PORT..."
+./dev-init.sh:12:if ! nc -z localhost "$SURREAL_PORT" 2>/dev/null; then
+./dev-init.sh:13:  echo "❌ SurrealDB not reachable on port $SURREAL_PORT. Please start it first."
+./scripts/migrate_surreal_to_postgres.py:272:        "--surreal-url", default=os.getenv("SURREAL_URL", "http://localhost:8000")
+./scripts/migrate_surreal_to_postgres.py:274:    parser.add_argument("--surreal-user", default=os.getenv("SURREAL_USER", "root"))
+./scripts/migrate_surreal_to_postgres.py:277:        default=os.getenv("SURREAL_PASSWORD") or os.getenv("SURREAL_PASS") or "root",
+./scripts/migrate_surreal_to_postgres.py:280:        "--surreal-namespace", default=os.getenv("SURREAL_NAMESPACE", "open_notebook")
+./scripts/migrate_surreal_to_postgres.py:283:        "--surreal-database", default=os.getenv("SURREAL_DATABASE", "open_notebook")
+./CHANGELOG.md:27:- **Worker concurrency is now configurable** via `OPEN_NOTEBOOK_WORKER_MAX_TASKS`. The PostgreSQL command queue worker always ran with a hardcoded concurrency of 5, which overloads single-GPU and local-LLM setups and trips provider rate limits when several sources are processed at once. The variable is wired into every launch point — `make worker-start`/`make start-all`, `dev-init.sh`, and the Docker `supervisord.conf` (wrapped in `sh -c` so the shell actually expands it, since `command=` does not run through a shell) — and defaults to 5; set it to 1 for strictly sequential processing. It is read at worker launch time, so changing it requires restarting the worker. This also removes a phantom entry from the docs: `SURREAL_COMMANDS_MAX_TASKS` was documented but read nowhere (the worker's `--max-tasks` Typer option has no envvar binding) and has been replaced with the real variable in `.env.example` and the environment reference (#893)
+./CHANGELOG.md:78:- `docker-compose.yml` now uses the YAML list (exec) form for the SurrealDB `command`, so `SURREAL_USER` / `SURREAL_PASSWORD` values containing spaces are passed as single arguments instead of being split; the mirrored snippets in the installation docs and README (which had drifted — no credential interpolation, SurrealDB port published on all interfaces) are back in sync with the shipped file (#1093)
+./CHANGELOG.md:155:- `docker-compose.yml` now sources the SurrealDB credentials from `SURREAL_USER` / `SURREAL_PASSWORD` (applied to both the database server and the app), defaulting to `root:root` so the zero-config quick start is unchanged. Set them in a `.env` file to use your own credentials before exposing the instance; `.env.example` and the compose file note this (#946)
+./.claude/skills/release/runbook.md:28:# 1. Find which SurrealDB instance dev actually uses — read SURREAL_URL in .env
+./.claude/skills/release/runbook.md:30:#    be it), and note SURREAL_DATABASE.
+./open_notebook/utils/proxy.py:49:    ``SURREAL_URL`` wins, otherwise the legacy ``SURREAL_ADDRESS``. Returns the
+./open_notebook/utils/proxy.py:55:    candidate = os.environ.get("SURREAL_URL", "").strip()
+./open_notebook/utils/proxy.py:57:        candidate = os.environ.get("SURREAL_ADDRESS", "").strip()
+./open_notebook/utils/proxy.py:62:    # one for bare ``host`` / ``host:port`` values (e.g. SURREAL_ADDRESS).
+./open_notebook/podcasts/models.py:296:        lives in the same database (same SURREAL_* env vars), so this queries
 
 ## asciidoc
+./uv.lock:187:name = "asciidoc"
+./uv.lock:190:sdist = { url = "https://files.pythonhosted.org/packages/1d/e7/315a82f2d256e9270977aa3c15e8fe281fd7c40b8e2a0b97e0cb61ca8fa0/asciidoc-10.2.1.tar.gz", hash = "sha256:d9f13c285981b3c7eb660d02ca0a2779981e88d48105de81bb40445e60dddb83", size = 230179, upload-time = "2024-07-17T03:12:52.681Z" }
+./uv.lock:192:    { url = "https://files.pythonhosted.org/packages/75/1f/87941eaa96e86aa22086064f67e4187e2710fb76c147312979ea29278dac/asciidoc-10.2.1-py2.py3-none-any.whl", hash = "sha256:3f277a636b617c9ce7e0b87bcaea51f144500e9a5c8a6488421ee24594850d40", size = 272433, upload-time = "2024-07-17T03:12:49.012Z" },
+./uv.lock:444:    { name = "asciidoc" },
 
 ## imageio-ffmpeg
+./uv.lock:1050:name = "imageio-ffmpeg"
+./uv.lock:1868:    { name = "imageio-ffmpeg" },
 
 ## ffmpeg
+./uv.lock:1050:name = "imageio-ffmpeg"
+./uv.lock:1053:sdist = { url = "https://files.pythonhosted.org/packages/44/bd/c3343c721f2a1b0c9fc71c1aebf1966a3b7f08c2eea8ed5437a2865611d6/imageio_ffmpeg-0.6.0.tar.gz", hash = "sha256:e2556bed8e005564a9f925bb7afa4002d82770d6b08825078b7697ab88ba1755", size = 25210, upload-time = "2025-01-16T21:34:32.747Z" }
+./uv.lock:1055:    { url = "https://files.pythonhosted.org/packages/da/58/87ef68ac83f4c7690961bce288fd8e382bc5f1513860fc7f90a9c1c1c6bf/imageio_ffmpeg-0.6.0-py3-none-macosx_10_9_intel.macosx_10_9_x86_64.whl", hash = "sha256:9d2baaf867088508d4a3458e61eeb30e945c4ad8016025545f66c4b5aaef0a61", size = 24932969, upload-time = "2025-01-16T21:34:20.464Z" },
+./uv.lock:1056:    { url = "https://files.pythonhosted.org/packages/40/5c/f3d8a657d362cc93b81aab8feda487317da5b5d31c0e1fdfd5e986e55d17/imageio_ffmpeg-0.6.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b1ae3173414b5fc5f538a726c4e48ea97edc0d2cdc11f103afee655c463fa742", size = 21113891, upload-time = "2025-01-16T21:34:00.277Z" },
+./uv.lock:1057:    { url = "https://files.pythonhosted.org/packages/33/e7/1925bfbc563c39c1d2e82501d8372734a5c725e53ac3b31b4c2d081e895b/imageio_ffmpeg-0.6.0-py3-none-manylinux2014_aarch64.whl", hash = "sha256:1d47bebd83d2c5fc770720d211855f208af8a596c82d17730aa51e815cdee6dc", size = 25632706, upload-time = "2025-01-16T21:33:53.475Z" },
+./uv.lock:1058:    { url = "https://files.pythonhosted.org/packages/a0/2d/43c8522a2038e9d0e7dbdf3a61195ecc31ca576fb1527a528c877e87d973/imageio_ffmpeg-0.6.0-py3-none-manylinux2014_x86_64.whl", hash = "sha256:c7e46fcec401dd990405049d2e2f475e2b397779df2519b544b8aab515195282", size = 29498237, upload-time = "2025-01-16T21:34:13.726Z" },
+./uv.lock:1059:    { url = "https://files.pythonhosted.org/packages/a0/13/59da54728351883c3c1d9fca1710ab8eee82c7beba585df8f25ca925f08f/imageio_ffmpeg-0.6.0-py3-none-win32.whl", hash = "sha256:196faa79366b4a82f95c0f4053191d2013f4714a715780f0ad2a68ff37483cc2", size = 19652251, upload-time = "2025-01-16T21:34:06.812Z" },
+./uv.lock:1060:    { url = "https://files.pythonhosted.org/packages/2c/c6/fa760e12a2483469e2bf5058c5faff664acf66cadb4df2ad6205b016a73d/imageio_ffmpeg-0.6.0-py3-none-win_amd64.whl", hash = "sha256:02fa47c83703c37df6bfe4896aab339013f62bf02c5ebf2dce6da56af04ffc0a", size = 31246824, upload-time = "2025-01-16T21:34:28.6Z" },
+./uv.lock:1868:    { name = "imageio-ffmpeg" },
+./Dockerfile:48:    ffmpeg \
+./commands/podcast_commands.py:311:        # ffmpeg/clip errors combine_audio_files() returns an "ERROR: ..."
+./CHANGELOG.md:62:- Upgraded the content extraction dependency from content-core 1.14.x to 2.x (2.0.4). The source-processing graph was adapted to content-core's new keyword-only `extract_content()` API: engine/model overrides now travel through a `ContentCoreConfig` object instead of the input dict, and the extraction result (`ExtractionOutput`) no longer echoes the source `url`/`file_path` back, so those are carried from the request state into the saved source asset. Because content-core 2.x no longer deletes the uploaded file after extraction, the graph now honors the `delete_source` flag itself. Transitively this replaces the AGPL-licensed PyMuPDF with MIT-licensed pdfplumber for PDF extraction and drops moviepy in favor of direct ffmpeg calls (which fixes audio extraction from MP3 files carrying chapter metadata). No user-facing configuration changes in this step — document and URL engines stay on their `auto` defaults; new engine/OCR options are tracked separately under #939 (#1103)
+./CHANGELOG.md:63:- Podcast episode audio paths are now stored relative to the podcasts folder (`episodes/<uuid>/audio/<name>.mp3`) instead of as absolute filesystem paths, validated at write time so the database can never hold an absolute or root-escaping value, and resolved + containment-checked through a single shared helper instead of per-endpoint guards. Migration 21 converts existing rows written under the known roots (plain `file:///` URIs, `/app/data/podcasts/`, `/data/podcasts/`, `./data/podcasts/`, `data/podcasts/`); previously generated episodes now survive a `DATA_FOLDER` relocation. Rows under any other root (e.g. a source checkout at a custom absolute path) or in exotic legacy forms (percent-encoded or host-qualified `file://` URIs) are left untouched and treated as legacy-invalid — the same 403/audio-unavailable handling out-of-root rows already had; regenerate the episode to restore playback. Podcast jobs whose audio combination fails (podcast-creator reports an in-band `ERROR:` value) now fail with the real ffmpeg/clip error instead of reporting success for an episode with no playable audio (#1030)
 
 ## :latest
+./examples/easypanel/meta.yaml:39:      default: ghcr.io/sfmullins/open-notebook:latest
+./examples/docker-compose-ollama.yml:26:    image: ollama/ollama:latest
+./examples/docker-compose-speaches.yml:25:    image: ghcr.io/speaches-ai/speaches:latest-cpu
+./examples/docker-compose-speaches.yml:32:    # For GPU acceleration use ghcr.io/speaches-ai/speaches:latest-cuda
+./examples/docker-compose-full-local.yml:25:    image: ollama/ollama:latest
+./examples/docker-compose-full-local.yml:34:    image: ghcr.io/speaches-ai/speaches:latest-cpu
+./examples/README.md:133:    image: ollama/ollama:latest
+./docs/5-CONFIGURATION/openai-compatible.md:204:    image: vllm/vllm-openai:latest
+./docs/5-CONFIGURATION/reverse-proxy.md:424:    image: surrealdb/surrealdb:latest
+./docs/5-CONFIGURATION/local-tts.md:35:    image: ghcr.io/speaches-ai/speaches:latest-cpu
+./docs/5-CONFIGURATION/local-tts.md:155:    image: ghcr.io/speaches-ai/speaches:latest-cuda
+./docs/5-CONFIGURATION/local-stt.md:35:    image: ghcr.io/speaches-ai/speaches:latest-cpu
+./docs/5-CONFIGURATION/local-stt.md:141:    image: ghcr.io/speaches-ai/speaches:latest-cuda
+./docs/5-CONFIGURATION/ollama.md:138:    image: ollama/ollama:latest
+./docs/5-CONFIGURATION/ollama.md:262:mxbai-embed-large:latest    468836162de7    669 MB    7 minutes ago
+./docs/5-CONFIGURATION/ollama.md:273:| `mxbai-embed-large:latest` | `mxbai-embed-large` (missing tag) |
+./docs/5-CONFIGURATION/ollama.md:275:**Note:** Some models use `:latest` as the default tag. If `ollama list` shows `model:latest`, you must use `model:latest` in Open Notebook, not just `model`.
+./docs/6-TROUBLESHOOTING/quick-fixes.md:361:3. **Update regularly** — Pull latest image: `docker pull lfnovo/open_notebook:latest`
+./docs/0-START-HERE/quick-start-local.md:71:    image: ollama/ollama:latest
+./docs/1-INSTALLATION/docker-compose.md:178:    image: ollama/ollama:latest
+./Dockerfile:29:COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+./Dockerfile:54:COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+./Makefile:132:		-t $(CONTAINER_IMAGE):latest \
 

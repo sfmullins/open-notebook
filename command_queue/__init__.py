@@ -22,6 +22,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
 from open_notebook.database.postgres import (
+    close_pool,
     db_connection,
     ensure_schema,
     normalize_json,
@@ -73,17 +74,27 @@ def _run_async_submission(factory: Callable[[], Coroutine[Any, Any, str]]) -> st
     When called inside a running event loop, execute the short database bridge
     in a dedicated thread rather than nesting event loops in the caller thread.
     """
+
+    async def run_once() -> str:
+        try:
+            return await factory()
+        finally:
+            # This helper owns its short-lived event loop, so drain the pool while
+            # that loop is still alive instead of leaving loop-bound transports
+            # for a later caller to discover after loop closure.
+            await close_pool()
+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(factory())
+        return asyncio.run(run_once())
 
     result: list[str] = []
     errors: list[BaseException] = []
 
     def runner() -> None:
         try:
-            result.append(asyncio.run(factory()))
+            result.append(asyncio.run(run_once()))
         except BaseException as exc:
             errors.append(exc)
 
@@ -524,9 +535,12 @@ def execute_command_sync(
     command_id = submit_command(app, command_name, input_data)
 
     async def execute() -> CommandStatus:
-        if timeout is None:
-            return await _execute_specific(command_id)
-        return await asyncio.wait_for(_execute_specific(command_id), timeout=timeout)
+        try:
+            if timeout is None:
+                return await _execute_specific(command_id)
+            return await asyncio.wait_for(_execute_specific(command_id), timeout=timeout)
+        finally:
+            await close_pool()
 
     return asyncio.run(execute())
 

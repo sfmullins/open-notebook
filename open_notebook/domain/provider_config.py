@@ -80,7 +80,11 @@ class ProviderCredential:
     def from_dict(cls, data: dict, decrypted: bool = False) -> "ProviderCredential":
         api_key = None
         if data.get("api_key"):
-            api_key = data["api_key"] if isinstance(data["api_key"], SecretStr) else SecretStr(data["api_key"])
+            api_key = (
+                data["api_key"]
+                if isinstance(data["api_key"], SecretStr)
+                else SecretStr(data["api_key"])
+            )
         return cls(
             id=data["id"],
             name=data["name"],
@@ -116,7 +120,8 @@ class ProviderConfig(RecordModel):
             for provider, provider_creds in creds_data.items():
                 if not isinstance(provider_creds, list):
                     continue
-                credentials[provider] = []
+                provider_name = str(provider)
+                credentials[provider_name] = []
                 for raw in provider_creds:
                     try:
                         cred_data = dict(raw)
@@ -127,11 +132,14 @@ class ProviderConfig(RecordModel):
                             cred_data["api_key"] = SecretStr(str(api_key_val))
                         else:
                             cred_data["api_key"] = None
-                        credentials[provider].append(
+                        provider_value = cred_data.get("provider")
+                        if not isinstance(provider_value, str) or not provider_value:
+                            provider_value = provider_name
+                        credentials[provider_name].append(
                             ProviderCredential(
                                 id=cred_data.get("id", ""),
                                 name=cred_data.get("name", "Default"),
-                                provider=cred_data.get("provider", provider),
+                                provider=provider_value,
                                 is_default=cred_data.get("is_default", False),
                                 api_key=cred_data.get("api_key"),
                                 base_url=cred_data.get("base_url"),
@@ -157,10 +165,20 @@ class ProviderConfig(RecordModel):
 
     def get_default_config(self, provider: str) -> Optional[ProviderCredential]:
         credentials = self.credentials.get(provider.lower(), [])
-        return next((cred for cred in credentials if cred.is_default), credentials[0] if credentials else None)
+        return next(
+            (cred for cred in credentials if cred.is_default),
+            credentials[0] if credentials else None,
+        )
 
     def get_config(self, provider: str, config_id: str) -> Optional[ProviderCredential]:
-        return next((cred for cred in self.credentials.get(provider.lower(), []) if cred.id == config_id), None)
+        return next(
+            (
+                cred
+                for cred in self.credentials.get(provider.lower(), [])
+                if cred.id == config_id
+            ),
+            None,
+        )
 
     def add_config(self, provider: str, credential: ProviderCredential) -> None:
         provider_lower = provider.lower()

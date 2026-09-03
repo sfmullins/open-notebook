@@ -79,7 +79,7 @@ class _Bare:
 
 
 @pytest.mark.asyncio
-@patch("api.routers.chat.repo_query", new_callable=AsyncMock)
+@patch("api.routers.chat.repo_relations", new_callable=AsyncMock)
 @patch("api.routers.chat.chat_graph")
 @patch("api.routers.chat.ChatSession.get", new_callable=AsyncMock)
 async def test_get_chat_session_bare_id_gets_prefixed(
@@ -96,7 +96,7 @@ async def test_get_chat_session_bare_id_gets_prefixed(
 
 
 @pytest.mark.asyncio
-@patch("api.routers.chat.repo_query", new_callable=AsyncMock)
+@patch("api.routers.chat.repo_relations", new_callable=AsyncMock)
 @patch("api.routers.chat.chat_graph")
 @patch("api.routers.chat.ChatSession.get", new_callable=AsyncMock)
 async def test_get_chat_session_prefixed_id_kept_as_is(
@@ -126,7 +126,7 @@ async def test_delete_chat_session_missing_returns_404(mock_get, client):
 
 
 @pytest.mark.asyncio
-@patch("api.routers.chat.repo_query", new_callable=AsyncMock)
+@patch("api.routers.chat.repo_relations", new_callable=AsyncMock)
 @patch("api.routers.chat.chat_graph")
 @patch("api.routers.chat.ChatSession.get", new_callable=AsyncMock)
 async def test_get_chat_session_message_shapes(mock_get, mock_graph, mock_repo, client):
@@ -159,7 +159,7 @@ async def test_get_chat_session_message_shapes(mock_get, mock_graph, mock_repo, 
 
 
 @pytest.mark.asyncio
-@patch("api.routers.chat.repo_query", new_callable=AsyncMock)
+@patch("api.routers.chat.repo_relations", new_callable=AsyncMock)
 @patch("api.routers.chat.chat_graph")
 @patch("api.routers.chat.ChatSession.get", new_callable=AsyncMock)
 async def test_get_chat_session_no_state_yields_empty_messages(
@@ -185,9 +185,7 @@ async def test_get_chat_session_no_state_yields_empty_messages(
 @patch("api.routers._chat_shared.Source.get", new_callable=AsyncMock)
 async def test_create_source_chat_session_missing_source_returns_404(mock_get, client):
     mock_get.side_effect = _nf
-    resp = client.post(
-        "/api/sources/gone/chat/sessions", json={"source_id": "gone"}
-    )
+    resp = client.post("/api/sources/gone/chat/sessions", json={"source_id": "gone"})
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Source not found"
     mock_get.assert_awaited_once_with("source:gone")
@@ -207,7 +205,7 @@ async def test_list_source_chat_sessions_missing_source_returns_404(mock_get, cl
 
 
 @pytest.mark.asyncio
-@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+@patch("api.routers._chat_shared.repo_relation_exists", new_callable=AsyncMock)
 @patch("api.routers._chat_shared.ChatSession.get", new_callable=AsyncMock)
 @patch("api.routers._chat_shared.Source.get", new_callable=AsyncMock)
 async def test_get_source_chat_session_missing_session_returns_404(
@@ -225,7 +223,7 @@ async def test_get_source_chat_session_missing_session_returns_404(
 
 
 @pytest.mark.asyncio
-@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+@patch("api.routers._chat_shared.repo_relation_exists", new_callable=AsyncMock)
 @patch("api.routers._chat_shared.ChatSession.get", new_callable=AsyncMock)
 @patch("api.routers._chat_shared.Source.get", new_callable=AsyncMock)
 async def test_get_source_chat_session_missing_relation_behavior(
@@ -249,7 +247,7 @@ async def test_get_source_chat_session_missing_relation_behavior(
 
 
 @pytest.mark.asyncio
-@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+@patch("api.routers._chat_shared.repo_relation_exists", new_callable=AsyncMock)
 @patch("api.routers._chat_shared.ChatSession.get", new_callable=AsyncMock)
 @patch("api.routers._chat_shared.Source.get", new_callable=AsyncMock)
 async def test_delete_source_chat_session_missing_relation_behavior(
@@ -268,7 +266,7 @@ async def test_delete_source_chat_session_missing_relation_behavior(
 
 
 @pytest.mark.asyncio
-@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+@patch("api.routers._chat_shared.repo_relation_exists", new_callable=AsyncMock)
 @patch("api.routers._chat_shared.ChatSession.get", new_callable=AsyncMock)
 @patch("api.routers._chat_shared.Source.get", new_callable=AsyncMock)
 async def test_send_message_missing_relation_returns_404(
@@ -290,7 +288,7 @@ async def test_send_message_missing_relation_returns_404(
 
 @pytest.mark.asyncio
 @patch("api.routers.source_chat.source_chat_graph")
-@patch("api.routers._chat_shared.repo_query", new_callable=AsyncMock)
+@patch("api.routers._chat_shared.repo_relation_exists", new_callable=AsyncMock)
 @patch("api.routers._chat_shared.ChatSession.get", new_callable=AsyncMock)
 @patch("api.routers._chat_shared.Source.get", new_callable=AsyncMock)
 async def test_get_source_chat_session_happy_path_shapes(

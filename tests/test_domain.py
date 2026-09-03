@@ -246,8 +246,12 @@ class TestNotebookDomain:
             patch.object(Notebook, "get_notes", new=fake_get_notes),
             patch.object(Notebook, "get_chat_sessions", new=fake_get_chat_sessions),
             patch(
-                "open_notebook.domain.notebook.repo_query",
+                "open_notebook.domain.notebook.repo_relations",
                 new=AsyncMock(return_value=[]),
+            ),
+            patch(
+                "open_notebook.domain.notebook.repo_delete_relations",
+                new=AsyncMock(return_value=None),
             ),
             patch(
                 "open_notebook.domain.base.repo_delete",

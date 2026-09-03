@@ -35,7 +35,7 @@ class TestGetJobDetailsForCommandsUnit:
     @pytest.mark.asyncio
     async def test_empty_input_returns_empty_without_querying(self):
         with patch(
-            "open_notebook.podcasts.models.repo_query", new=AsyncMock()
+            "open_notebook.podcasts.models.repo_command_rows", new=AsyncMock()
         ) as mock_query:
             result = await PodcastEpisode.get_job_details_for_commands([])
         assert result == {}
@@ -48,7 +48,7 @@ class TestGetJobDetailsForCommandsUnit:
             {"id": "command:b", "status": "failed", "error_message": "boom"},
         ]
         with patch(
-            "open_notebook.podcasts.models.repo_query",
+            "open_notebook.podcasts.models.repo_command_rows",
             new=AsyncMock(return_value=fake_rows),
         ) as mock_query:
             result = await PodcastEpisode.get_job_details_for_commands(
@@ -64,7 +64,7 @@ class TestGetJobDetailsForCommandsUnit:
     @pytest.mark.asyncio
     async def test_query_failure_returns_empty_dict_rather_than_raising(self):
         with patch(
-            "open_notebook.podcasts.models.repo_query",
+            "open_notebook.podcasts.models.repo_command_rows",
             new=AsyncMock(side_effect=RuntimeError("db down")),
         ):
             result = await PodcastEpisode.get_job_details_for_commands(["command:a"])
@@ -73,7 +73,8 @@ class TestGetJobDetailsForCommandsUnit:
     @pytest.mark.asyncio
     async def test_falsy_command_ids_are_filtered_out(self):
         with patch(
-            "open_notebook.podcasts.models.repo_query", new=AsyncMock(return_value=[])
+            "open_notebook.podcasts.models.repo_command_rows",
+            new=AsyncMock(return_value=[]),
         ) as mock_query:
             # None intentionally violates the signature: the method must filter
             # out falsy ids it can receive from unvalidated DB rows.
@@ -81,10 +82,8 @@ class TestGetJobDetailsForCommandsUnit:
                 [None, "", "command:a"]  # type: ignore[list-item]
             )
 
-        # Only the truthy id should reach the query's bound params.
-        _, kwargs_or_args = mock_query.call_args
-        bound_vars = mock_query.call_args.args[1]
-        assert len(bound_vars["command_ids"]) == 1
+        # Only the truthy id should reach the batched command lookup.
+        mock_query.assert_awaited_once_with(["command:a"])
 
 
 class TestListPodcastEpisodesUsesBatchedLookup:
@@ -208,9 +207,7 @@ class TestListPodcastEpisodesUsesBatchedLookup:
     @pytest.mark.asyncio
     async def test_error_message_propagates_from_batch_result(self):
         episode = make_episode(command="command:err", suffix="err")
-        batch_result = {
-            "command:err": {"status": "failed", "error_message": "kaboom"}
-        }
+        batch_result = {"command:err": {"status": "failed", "error_message": "kaboom"}}
 
         with (
             patch(

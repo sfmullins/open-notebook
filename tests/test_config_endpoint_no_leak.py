@@ -32,7 +32,7 @@ SENSITIVE_MESSAGE = "connection refused to internal-db-host.corp.local:8000: pas
 class TestConfigEndpointDoesNotLeakDbErrors:
     def test_db_failure_does_not_include_raw_error_in_response(self, client):
         with patch(
-            "api.routers.config.repo_query",
+            "api.routers.config.repo_healthcheck",
             new=AsyncMock(side_effect=RuntimeError(SENSITIVE_MESSAGE)),
         ):
             response = client.get("/api/config")
@@ -48,7 +48,7 @@ class TestConfigEndpointDoesNotLeakDbErrors:
         import asyncio
 
         with patch(
-            "api.routers.config.repo_query",
+            "api.routers.config.repo_healthcheck",
             new=AsyncMock(side_effect=asyncio.TimeoutError()),
         ):
             response = client.get("/api/config")
@@ -60,7 +60,7 @@ class TestConfigEndpointDoesNotLeakDbErrors:
 
     def test_healthy_db_reports_online(self, client):
         with patch(
-            "api.routers.config.repo_query",
+            "api.routers.config.repo_healthcheck",
             new=AsyncMock(return_value=[{"result": 1}]),
         ):
             response = client.get("/api/config")

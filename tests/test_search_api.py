@@ -41,64 +41,35 @@ class TestSearchLimitValidation:
         mock_text_search.assert_awaited_once()
 
 
-class TestTextSearchHighlightOverflowFallback:
-    """text_search() must fall back to vector search on a highlight position overflow (#648)."""
+class TestPostgresTextSearchDelegation:
+    """The domain wrapper delegates to PostgreSQL FTS and normalizes failures."""
 
     @pytest.mark.asyncio
-    async def test_position_overflow_falls_back_to_vector_search(self):
+    async def test_text_search_delegates_to_postgres_backend(self):
         from open_notebook.domain import notebook as notebook_module
 
-        overflow = RuntimeError(
-            "A value can't be highlighted: position overflow: 2545 - len: 1965"
-        )
-        with (
-            patch.object(
-                notebook_module, "repo_query", new_callable=AsyncMock, side_effect=overflow
-            ),
-            patch.object(
-                notebook_module,
-                "vector_search",
-                new_callable=AsyncMock,
-                return_value=[{"id": "source:1"}],
-            ) as mock_vector,
-        ):
+        expected = [{"id": "source:1"}]
+        with patch.object(
+            notebook_module,
+            "text_search_pg",
+            new_callable=AsyncMock,
+            return_value=expected,
+        ) as mock_search:
             result = await notebook_module.text_search("hello", 10)
 
-        assert result == [{"id": "source:1"}]
-        mock_vector.assert_awaited_once_with("hello", 10, True, True)
+        assert result == expected
+        mock_search.assert_awaited_once_with("hello", 10, True, True)
 
     @pytest.mark.asyncio
-    async def test_position_overflow_raises_when_vector_also_fails(self):
-        from open_notebook.domain import notebook as notebook_module
-        from open_notebook.exceptions import DatabaseOperationError
-
-        overflow = RuntimeError("position overflow: 1 - len: 0")
-        with (
-            patch.object(
-                notebook_module, "repo_query", new_callable=AsyncMock, side_effect=overflow
-            ),
-            patch.object(
-                notebook_module,
-                "vector_search",
-                new_callable=AsyncMock,
-                side_effect=Exception("no embedding model"),
-            ),
-        ):
-            # When both search paths fail, surface the error rather than masking it
-            # as an empty result set.
-            with pytest.raises(DatabaseOperationError):
-                await notebook_module.text_search("hello", 10)
-
-    @pytest.mark.asyncio
-    async def test_other_runtime_errors_still_raise(self):
+    async def test_postgres_text_search_failure_is_wrapped(self):
         from open_notebook.domain import notebook as notebook_module
         from open_notebook.exceptions import DatabaseOperationError
 
         with patch.object(
             notebook_module,
-            "repo_query",
+            "text_search_pg",
             new_callable=AsyncMock,
-            side_effect=RuntimeError("some other db failure"),
+            side_effect=RuntimeError("postgres text search failed"),
         ):
             with pytest.raises(DatabaseOperationError):
                 await notebook_module.text_search("hello", 10)

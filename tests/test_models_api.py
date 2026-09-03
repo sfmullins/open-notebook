@@ -16,14 +16,14 @@ class TestModelCreation:
     """Test suite for Model Creation endpoint."""
 
     @pytest.mark.asyncio
-    @patch("open_notebook.database.repository.repo_query")
+    @patch("open_notebook.database.repository.repo_list")
     @patch("api.routers.models.Model.save")
     async def test_create_duplicate_model_same_case(
-        self, mock_save, mock_repo_query, client
+        self, mock_save, mock_repo_backend, client
     ):
         """Test that creating a duplicate model with same case returns 400."""
-        # Mock repo_query to return a duplicate model
-        mock_repo_query.return_value = [
+        # Mock repo_list to return a duplicate model
+        mock_repo_backend.return_value = [
             {
                 "id": "model:123",
                 "name": "gpt-4",
@@ -45,14 +45,14 @@ class TestModelCreation:
         )
 
     @pytest.mark.asyncio
-    @patch("open_notebook.database.repository.repo_query")
+    @patch("open_notebook.database.repository.repo_list")
     @patch("api.routers.models.Model.save")
     async def test_create_duplicate_model_different_case(
-        self, mock_save, mock_repo_query, client
+        self, mock_save, mock_repo_backend, client
     ):
         """Test that creating a duplicate model with different case returns 400."""
-        # Mock repo_query to return a duplicate model (case-insensitive match)
-        mock_repo_query.return_value = [
+        # Mock repo_list to return a duplicate model (case-insensitive match)
+        mock_repo_backend.return_value = [
             {
                 "id": "model:123",
                 "name": "gpt-4",
@@ -74,15 +74,15 @@ class TestModelCreation:
         )
 
     @pytest.mark.asyncio
-    @patch("open_notebook.database.repository.repo_query")
+    @patch("open_notebook.database.repository.repo_list")
     async def test_create_same_model_name_different_provider(
-        self, mock_repo_query, client
+        self, mock_repo_backend, client
     ):
         """Test that creating a model with same name but different provider is allowed."""
         from open_notebook.ai.models import Model
 
-        # Mock repo_query to return empty (no duplicate found for different provider)
-        mock_repo_query.return_value = []
+        # Mock repo_list to return empty (no duplicate found for different provider)
+        mock_repo_backend.return_value = []
 
         # Patch the save method on the Model class
         with patch.object(Model, "save", new_callable=AsyncMock):
@@ -96,13 +96,15 @@ class TestModelCreation:
             assert response.status_code == 200
 
     @pytest.mark.asyncio
-    @patch("open_notebook.database.repository.repo_query")
-    async def test_create_same_model_name_different_type(self, mock_repo_query, client):
+    @patch("open_notebook.database.repository.repo_list")
+    async def test_create_same_model_name_different_type(
+        self, mock_repo_backend, client
+    ):
         """Test that creating a model with same name but different type is allowed."""
         from open_notebook.ai.models import Model
 
-        # Mock repo_query to return empty (no duplicate found for different type)
-        mock_repo_query.return_value = []
+        # Mock repo_list to return empty (no duplicate found for different type)
+        mock_repo_backend.return_value = []
 
         # Patch the save method on the Model class
         with patch.object(Model, "save", new_callable=AsyncMock):
@@ -463,7 +465,9 @@ class TestUpdateDefaultModels:
 
     def test_absent_field_keeps_current_value(self, client):
         defaults = self._mock_defaults()
-        response = self._put(client, defaults, {"default_tools_model": "model:new-tools"})
+        response = self._put(
+            client, defaults, {"default_tools_model": "model:new-tools"}
+        )
 
         assert response.status_code == 200
         assert defaults.default_tools_model == "model:new-tools"
@@ -512,19 +516,42 @@ class TestAutoAssignDefaults:
 
     def _models(self):
         return [
-            {"id": "model:lang", "provider": "openai", "name": "gpt-4o", "type": "language"},
-            {"id": "model:embed", "provider": "openai", "name": "text-embedding-3", "type": "embedding"},
-            {"id": "model:tts", "provider": "openai", "name": "tts-1", "type": "text_to_speech"},
-            {"id": "model:stt", "provider": "openai", "name": "whisper-1", "type": "speech_to_text"},
+            {
+                "id": "model:lang",
+                "provider": "openai",
+                "name": "gpt-4o",
+                "type": "language",
+            },
+            {
+                "id": "model:embed",
+                "provider": "openai",
+                "name": "text-embedding-3",
+                "type": "embedding",
+            },
+            {
+                "id": "model:tts",
+                "provider": "openai",
+                "name": "tts-1",
+                "type": "text_to_speech",
+            },
+            {
+                "id": "model:stt",
+                "provider": "openai",
+                "name": "whisper-1",
+                "type": "speech_to_text",
+            },
         ]
 
     def _post(self, client, defaults):
-        with patch(
-            "api.routers.models.DefaultModels.get_instance",
-            new=AsyncMock(return_value=defaults),
-        ), patch(
-            "open_notebook.database.repository.repo_query",
-            new=AsyncMock(return_value=self._models()),
+        with (
+            patch(
+                "api.routers.models.DefaultModels.get_instance",
+                new=AsyncMock(return_value=defaults),
+            ),
+            patch(
+                "open_notebook.database.repository.repo_list",
+                new=AsyncMock(return_value=self._models()),
+            ),
         ):
             return client.post("/api/models/auto-assign")
 
@@ -583,18 +610,19 @@ class TestGetDefaultModelFallback:
         return defaults
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "model_type", ["transformation", "tools", "large_context"]
-    )
+    @pytest.mark.parametrize("model_type", ["transformation", "tools", "large_context"])
     async def test_text_optional_slots_fall_back_to_chat(self, model_type):
         from open_notebook.ai.models import model_manager
 
         defaults = self._defaults()
-        with patch.object(
-            model_manager, "get_defaults", new=AsyncMock(return_value=defaults)
-        ), patch.object(
-            model_manager, "get_model", new=AsyncMock(return_value="chat-model-obj")
-        ) as mock_get_model:
+        with (
+            patch.object(
+                model_manager, "get_defaults", new=AsyncMock(return_value=defaults)
+            ),
+            patch.object(
+                model_manager, "get_model", new=AsyncMock(return_value="chat-model-obj")
+            ) as mock_get_model,
+        ):
             result = await model_manager.get_default_model(model_type)
 
         assert result == "chat-model-obj"
@@ -607,11 +635,14 @@ class TestGetDefaultModelFallback:
         from open_notebook.ai.models import model_manager
 
         defaults = self._defaults()
-        with patch.object(
-            model_manager, "get_defaults", new=AsyncMock(return_value=defaults)
-        ), patch.object(
-            model_manager, "get_model", new=AsyncMock(return_value="obj")
-        ) as mock_get_model:
+        with (
+            patch.object(
+                model_manager, "get_defaults", new=AsyncMock(return_value=defaults)
+            ),
+            patch.object(
+                model_manager, "get_model", new=AsyncMock(return_value="obj")
+            ) as mock_get_model,
+        ):
             tts = await model_manager.get_default_model("text_to_speech")
             stt = await model_manager.get_default_model("speech_to_text")
 

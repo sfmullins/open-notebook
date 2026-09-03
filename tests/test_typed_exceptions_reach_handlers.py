@@ -40,23 +40,101 @@ def _boom(*_args, **_kwargs):
 
 # (router, patch target, method, url, json body) — one per fixed router.
 CASES = [
-    ("chat", "api.routers.chat.Notebook.get", "GET", "/api/chat/sessions?notebook_id=notebook:1", None),
-    ("source_chat", "api.routers._chat_shared.Source.get", "GET", "/api/sources/xyz/chat/sessions", None),
-    ("sources", "api.routers.sources.repo_query", "GET", "/api/sources", None),
-    ("notebooks", "api.routers.notebooks.repo_query", "GET", "/api/notebooks", None),
+    (
+        "chat",
+        "api.routers.chat.Notebook.get",
+        "GET",
+        "/api/chat/sessions?notebook_id=notebook:1",
+        None,
+    ),
+    (
+        "source_chat",
+        "api.routers._chat_shared.Source.get",
+        "GET",
+        "/api/sources/xyz/chat/sessions",
+        None,
+    ),
+    ("sources", "api.routers.sources.repo_list", "GET", "/api/sources", None),
+    ("notebooks", "api.routers.notebooks.repo_list", "GET", "/api/notebooks", None),
     ("notes", "api.routers.notes.Note.get_all", "GET", "/api/notes", None),
     ("models", "api.routers.models.Model.get_all", "GET", "/api/models", None),
-    ("commands", "api.routers.commands.CommandService.get_command_status", "GET", "/api/commands/jobs/command:abc", None),
-    ("credentials", "api.routers.credentials.Credential.get_all", "GET", "/api/credentials", None),
-    ("embedding", "api.routers.embedding.model_manager.get_embedding_model", "POST", "/api/embed", {"item_id": "source:1", "item_type": "source"}),
-    ("embedding_rebuild", "api.routers.embedding_rebuild.repo_query", "POST", "/api/embeddings/rebuild", {"mode": "existing"}),
-    ("episode_profiles", "api.routers.episode_profiles.EpisodeProfile.get_all", "GET", "/api/episode-profiles", None),
-    ("insights", "api.routers.insights.SourceInsight.get", "GET", "/api/insights/source_insight:1", None),
-    ("podcasts", "api.routers.podcasts.PodcastService.list_episodes", "GET", "/api/podcasts/episodes", None),
-    ("search", "api.routers.search.text_search", "POST", "/api/search", {"query": "hello", "type": "text"}),
-    ("settings", "api.routers.settings.ContentSettings.get_instance", "GET", "/api/settings", None),
-    ("speaker_profiles", "api.routers.speaker_profiles.SpeakerProfile.get_all", "GET", "/api/speaker-profiles", None),
-    ("transformations", "api.routers.transformations.Transformation.get_all", "GET", "/api/transformations", None),
+    (
+        "commands",
+        "api.routers.commands.CommandService.get_command_status",
+        "GET",
+        "/api/commands/jobs/command:abc",
+        None,
+    ),
+    (
+        "credentials",
+        "api.routers.credentials.Credential.get_all",
+        "GET",
+        "/api/credentials",
+        None,
+    ),
+    (
+        "embedding",
+        "api.routers.embedding.model_manager.get_embedding_model",
+        "POST",
+        "/api/embed",
+        {"item_id": "source:1", "item_type": "source"},
+    ),
+    (
+        "embedding_rebuild",
+        "api.routers.embedding_rebuild.count_distinct_source_embeddings",
+        "POST",
+        "/api/embeddings/rebuild",
+        {"mode": "existing"},
+    ),
+    (
+        "episode_profiles",
+        "api.routers.episode_profiles.EpisodeProfile.get_all",
+        "GET",
+        "/api/episode-profiles",
+        None,
+    ),
+    (
+        "insights",
+        "api.routers.insights.SourceInsight.get",
+        "GET",
+        "/api/insights/source_insight:1",
+        None,
+    ),
+    (
+        "podcasts",
+        "api.routers.podcasts.PodcastService.list_episodes",
+        "GET",
+        "/api/podcasts/episodes",
+        None,
+    ),
+    (
+        "search",
+        "api.routers.search.text_search",
+        "POST",
+        "/api/search",
+        {"query": "hello", "type": "text"},
+    ),
+    (
+        "settings",
+        "api.routers.settings.ContentSettings.get_instance",
+        "GET",
+        "/api/settings",
+        None,
+    ),
+    (
+        "speaker_profiles",
+        "api.routers.speaker_profiles.SpeakerProfile.get_all",
+        "GET",
+        "/api/speaker-profiles",
+        None,
+    ),
+    (
+        "transformations",
+        "api.routers.transformations.Transformation.get_all",
+        "GET",
+        "/api/transformations",
+        None,
+    ),
 ]
 
 
@@ -100,7 +178,7 @@ class TestUnsupportedTypeErrorPropagation:
         from open_notebook.exceptions import UnsupportedTypeException
 
         with patch(
-            "api.routers.sources.repo_query",
+            "api.routers.sources.repo_list",
             new=AsyncMock(
                 side_effect=UnsupportedTypeException(
                     "Unsupported file type: application/zip"
@@ -121,7 +199,7 @@ class TestUntypedExceptionsStillSanitized:
 
     def test_runtime_error_stays_generic_500(self, client):
         with patch(
-            "api.routers.sources.repo_query",
+            "api.routers.sources.repo_list",
             new=AsyncMock(side_effect=RuntimeError(self.SECRET)),
         ):
             response = client.get("/api/sources")

@@ -84,9 +84,7 @@ def unresolvable_episode(suffix="gone"):
 class TestGetDisplayInfoForIdsUnit:
     @pytest.mark.asyncio
     async def test_empty_input_returns_empty_without_querying(self):
-        with patch(
-            "open_notebook.ai.models.repo_query", new=AsyncMock()
-        ) as mock_query:
+        with patch("open_notebook.ai.models.repo_list", new=AsyncMock()) as mock_query:
             result = await Model.get_display_info_for_ids([])
         assert result == {}
         mock_query.assert_not_called()
@@ -98,7 +96,7 @@ class TestGetDisplayInfoForIdsUnit:
             {"id": "model:voice", "name": "eleven_turbo", "provider": "elevenlabs"},
         ]
         with patch(
-            "open_notebook.ai.models.repo_query",
+            "open_notebook.ai.models.repo_list",
             new=AsyncMock(return_value=fake_rows),
         ) as mock_query:
             result = await Model.get_display_info_for_ids(
@@ -114,19 +112,20 @@ class TestGetDisplayInfoForIdsUnit:
     @pytest.mark.asyncio
     async def test_duplicate_and_falsy_ids_are_deduped_and_filtered(self):
         with patch(
-            "open_notebook.ai.models.repo_query", new=AsyncMock(return_value=[])
+            "open_notebook.ai.models.repo_list", new=AsyncMock(return_value=[])
         ) as mock_query:
             await Model.get_display_info_for_ids(
                 ["model:outline", "model:outline", None, ""]  # type: ignore[list-item]
             )
 
-        bound_vars = mock_query.call_args.args[1]
-        assert len(bound_vars["model_ids"]) == 1
+        mock_query.assert_awaited_once_with(
+            "model", in_filters={"id": ["model:outline"]}
+        )
 
     @pytest.mark.asyncio
     async def test_query_failure_returns_empty_dict_rather_than_raising(self):
         with patch(
-            "open_notebook.ai.models.repo_query",
+            "open_notebook.ai.models.repo_list",
             new=AsyncMock(side_effect=RuntimeError("db down")),
         ):
             result = await Model.get_display_info_for_ids(["model:outline"])
@@ -135,7 +134,7 @@ class TestGetDisplayInfoForIdsUnit:
     @pytest.mark.asyncio
     async def test_unresolvable_ids_are_absent_from_result(self):
         with patch(
-            "open_notebook.ai.models.repo_query",
+            "open_notebook.ai.models.repo_list",
             new=AsyncMock(
                 return_value=[
                     {"id": "model:outline", "name": "gpt-4o", "provider": "openai"}

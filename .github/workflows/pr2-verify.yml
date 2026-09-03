@@ -6,11 +6,16 @@ on:
       - fix/valt-runtime-hardening
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: pr2-verification
   cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  UV_PYTHON: "3.11"
+  NODE_VERSION: "22"
 
 jobs:
   boundary:
@@ -19,50 +24,13 @@ jobs:
       - uses: actions/checkout@v6
       - run: python3 scripts/check_no_surreal_runtime.py
 
-  frontend:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: fix/valt-runtime-hardening
-          fetch-depth: 0
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-      - name: Refresh lockfile for current security advisories
-        run: npm audit fix --package-lock-only
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run test:coverage
-      - run: npm run build
-      - run: npm audit --audit-level=moderate
-      - name: Persist verified lockfile remediation
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git diff --cached --quiet && exit 0
-          git commit -m "fix(frontend): refresh transitive dependency security lock"
-          git push origin HEAD:fix/valt-runtime-hardening
-
   backend:
-    needs: frontend
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       DATABASE_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
       POSTGRES_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
       OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-test-key
-      UV_PYTHON: "3.11"
     services:
       postgres:
         image: pgvector/pgvector:0.8.6-pg17-bookworm
@@ -79,68 +47,107 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: fix/valt-runtime-hardening
-          fetch-depth: 0
-      - name: Apply verified migration fixes
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/pr2_type_fix.py
-          mkdir -p .pr2-tmp
-          cp PR2_test_migration.py .pr2-tmp/PR2_test_migration.py
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('.pr2-tmp/PR2_test_migration.py')
-          text = path.read_text(encoding='utf-8')
-          text = text.replace(
-              'if "repo_query" in path.read_text(encoding="utf-8"):',
-              'if ".repo_query" in path.read_text(encoding="utf-8"):',
-          )
-          path.write_text(text, encoding='utf-8')
-          PY
-          python3 .pr2-tmp/PR2_test_migration.py
-          sed -i 's/mock_repo_query/mock_repo_backend/g' \
-            tests/test_models_api.py \
-            tests/test_recently_viewed_api.py \
-            tests/test_sources_api.py
-          rm -rf .pr2-tmp PR2_test_migration.py scripts/pr2_type_fix.py
-          if grep -R --line-number --include='*.py' 'repo_query' tests; then
-            echo 'stale repo_query compatibility reference remains in tests' >&2
-            exit 1
-          fi
       - uses: astral-sh/setup-uv@v8.1.0
-      - run: uv python install 3.11
+      - run: uv python install "$PYTHON_VERSION"
       - run: uv lock --check
       - run: uv sync --frozen --group dev
-      - name: Format migrated files
-        run: |
-          uv run ruff format \
-            open_notebook/domain/provider_config.py \
-            open_notebook/ai/model_discovery.py \
-            tests/test_chat_routers_characterization.py \
-            tests/test_config_endpoint_no_leak.py \
-            tests/test_domain.py \
-            tests/test_error_message_sanitization.py \
-            tests/test_models_api.py \
-            tests/test_podcast_episode_model_resolution.py \
-            tests/test_podcast_job_status_batching.py \
-            tests/test_podcast_speaker_profile.py \
-            tests/test_proxy.py \
-            tests/test_recently_viewed_api.py \
-            tests/test_search_api.py \
-            tests/test_sources_api.py \
-            tests/test_typed_exceptions_reach_handlers.py
       - run: uv run ruff check .
       - run: uv run python -m mypy .
       - run: uv run pytest tests/ -q --tb=short
-      - name: Persist fully verified backend migration
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:coverage
+      - run: npm run build
+      - run: npm audit --audit-level=moderate
+
+  migration-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+      POSTGRES_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
+      OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-test-key
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg17-bookworm
+        env:
+          POSTGRES_USER: open_notebook
+          POSTGRES_PASSWORD: open_notebook
+          POSTGRES_DB: open_notebook
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U open_notebook -d open_notebook"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv python install "$PYTHON_VERSION"
+      - run: uv sync --frozen
+      - name: Start pinned legacy SurrealDB fixture
         shell: bash
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --quiet && exit 0
-          git commit -m "test(postgres): migrate characterization coverage to typed repositories"
-          git push origin HEAD:fix/valt-runtime-hardening
+          docker run -d --name surreal-parity -p 127.0.0.1:8000:8000 \
+            surrealdb/surrealdb:v2.6.5 \
+            start --log info --user root --pass root memory
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs surreal-parity
+          exit 1
+      - name: Seed semantic migration fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/parity.surql <<'SQL'
+          CREATE notebook:parity SET name='Parity Notebook', description='migration fixture';
+          CREATE source:parity SET title='Parity Source', full_text='Fixture body';
+          RELATE source:parity->reference->notebook:parity SET role='primary';
+          CREATE source_embedding:parity SET source=source:parity, `order`=0, content='fixture chunk', embedding=[0.1,0.2,0.3];
+          CREATE note:parity SET title='Parity Note', content='note body', embedding=[0.4,0.5,0.6];
+          SQL
+          curl --fail --silent --show-error --user root:root \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: text/plain' \
+            -H 'surreal-ns: open_notebook' \
+            -H 'surreal-db: open_notebook' \
+            --data-binary @/tmp/parity.surql \
+            http://127.0.0.1:8000/sql | tee /tmp/seed-result.json
+          python3 - <<'PY'
+          import json
+          payload = json.load(open('/tmp/seed-result.json', encoding='utf-8'))
+          assert payload and all(item.get('status') == 'OK' for item in payload), payload
+          PY
+      - name: Run production migration
+        run: >-
+          uv run python scripts/migrate_surreal_to_postgres.py
+          --surreal-url http://127.0.0.1:8000
+          --surreal-user root
+          --surreal-password root
+          --surreal-namespace open_notebook
+          --surreal-database open_notebook
+      - name: Assert semantic parity and non-empty guard
+        run: uv run python tests/integration/check_surreal_postgres_parity.py
+      - name: Stop legacy fixture
+        if: always()
+        run: docker rm -f surreal-parity || true

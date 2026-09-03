@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-"""Fail CI if a SurrealDB runtime can leak back into shipped code.
+"""Fail CI if SurrealDB runtime/compatibility residue re-enters shipped code.
 
-Historical documentation, tests and the one-time SurrealDB -> PostgreSQL importer
-may describe or connect to SurrealDB. Normal application, deployment and package
-surfaces may not import the SurrealDB SDK or ship the SurrealDB server image/binary.
-
-This deliberately does not ban the word "SurrealQL": upstream Open Notebook is
-MIT-licensed and its query strings are not the BSL-licensed SurrealDB server
-implementation. Query compatibility is a technical migration concern; this gate
-protects the actual runtime and distribution boundary.
+The one-time SurrealDB -> PostgreSQL importer is the sole runtime-tree exception:
+it must understand the historical source database. Normal application,
+deployment, packaging and examples must be PostgreSQL-native and may not expose
+SurrealDB configuration, SDK/server dependencies, or generic SurrealQL query
+compatibility.
 """
 
 from __future__ import annotations
@@ -33,6 +30,7 @@ ROOT_RUNTIME_FILES = (
     ROOT / "Dockerfile",
     ROOT / "docker-compose.yml",
     ROOT / "docker-compose.dev.yml",
+    ROOT / "docker-compose.override.yml.example",
     ROOT / "Makefile",
     ROOT / "dev-init.sh",
     ROOT / "start.sh",
@@ -48,6 +46,10 @@ PROHIBITED_PATTERNS = (
     (re.compile(r"(?m)^\s*(?:from|import)\s+surrealdb\b"), "SurrealDB Python SDK import"),
     (re.compile(r"surrealdb/surrealdb(?::[^\s\"']+)?", re.I), "SurrealDB server image"),
     (re.compile(r"(?m)^\s*(?:COPY|ADD)\s+.*\bsurreal(?:\s|$)", re.I), "SurrealDB server binary"),
+    (re.compile(r"\brepo_query\b"), "generic SurrealQL compatibility query API"),
+    (re.compile(r"\blegacy_query_compat\b"), "legacy query compatibility module"),
+    (re.compile(r"\bsurreal_commands\b"), "obsolete Surreal-named command package"),
+    (re.compile(r"\bSURREAL_[A-Z0-9_]+\b"), "obsolete SurrealDB runtime configuration"),
 )
 
 
@@ -88,8 +90,7 @@ def check_packaging() -> list[str]:
         pyproject = tomllib.load(handle)
 
     dependencies = pyproject.get("project", {}).get("dependencies", [])
-    prohibited_dependencies = {"surrealdb", "PostgreSQL command queue"}
-    for prohibited in sorted(prohibited_dependencies):
+    for prohibited in ("surrealdb", "surreal-commands", "surreal_commands"):
         if any(dependency_name(str(item)) == prohibited for item in dependencies):
             failures.append(
                 f"pyproject.toml: external {prohibited} dependency is prohibited"
@@ -102,36 +103,47 @@ def check_packaging() -> list[str]:
         .get("find", {})
         .get("include", [])
     )
-    if any(str(item).startswith("surrealdb") for item in package_include):
-        failures.append("pyproject.toml: local surrealdb compatibility package is still shipped")
+    for item in package_include:
+        normalized = str(item).lower().replace("-", "_")
+        if normalized.startswith(("surrealdb", "surreal_commands")):
+            failures.append(
+                f"pyproject.toml: obsolete Surreal compatibility package is still shipped: {item}"
+            )
 
     lock = ROOT / "uv.lock"
     if lock.exists():
         lock_text = lock.read_text(encoding="utf-8")
-        for prohibited in ("surrealdb", "PostgreSQL command queue"):
+        for prohibited in ("surrealdb", "surreal-commands", "surreal_commands"):
             if re.search(
                 rf'(?m)^name\s*=\s*"{re.escape(prohibited)}"\s*$', lock_text
             ):
                 failures.append(
                     f"uv.lock: prohibited {prohibited} package remains in the locked dependency graph"
                 )
+
+    legacy_module = ROOT / "open_notebook" / "database" / "legacy_query_compat.py"
+    if legacy_module.exists():
+        failures.append("open_notebook/database/legacy_query_compat.py must not exist")
     return failures
 
 
 def main() -> int:
     failures = check_runtime() + check_packaging()
     if failures:
-        print("Surreal runtime boundary violations detected:", file=sys.stderr)
+        print("PostgreSQL-only runtime boundary violations detected:", file=sys.stderr)
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
         print(
-            "\nAllowed exceptions: the one-time SurrealDB importer and historical/docs/test references.\n"
-            "Normal runtime and deployment surfaces must remain PostgreSQL-only.",
+            "\nOnly scripts/migrate_surreal_to_postgres.py may connect to or configure "
+            "the historical SurrealDB source database.",
             file=sys.stderr,
         )
         return 1
 
-    print("Surreal runtime boundary clean: no server image/binary or SDK dependency in shipped runtime.")
+    print(
+        "PostgreSQL-only runtime boundary clean: no SurrealDB SDK/server/config, "
+        "legacy query parser, or generic repo_query API in shipped runtime."
+    )
     return 0
 
 

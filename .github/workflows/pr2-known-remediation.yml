@@ -35,16 +35,13 @@ jobs:
         run: |
           set -euo pipefail
           IMAGEIO_FFMPEG_EXE=/definitely/missing/ffmpeg .venv/bin/python - <<'PY'
+          import sys
           import api.main
-          import commands.podcast_commands as podcasts
-          try:
-              podcasts._load_podcast_creator()
-          except RuntimeError as exc:
-              text = str(exc)
-              assert "externally installed FFmpeg" in text, text
-          else:
-              raise AssertionError("podcast runtime unexpectedly loaded without external FFmpeg")
-          print("application import is independent of FFmpeg; podcast runtime fails explicitly")
+          import commands.podcast_commands
+
+          assert "podcast_creator" not in sys.modules, "podcast_creator loaded during app import"
+          assert "moviepy" not in sys.modules, "MoviePy loaded during app import"
+          print("application imports without loading podcast/FFmpeg runtime")
           PY
       - name: Commit remediation
         shell: bash

@@ -1,0 +1,34 @@
+name: PR2 sources native migration
+
+on:
+  push:
+    branches:
+      - fix/valt-runtime-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/valt-runtime-hardening
+          fetch-depth: 0
+      - name: Migrate sources router
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/pr2_sources_native.py
+          python3 -m compileall -q api/routers/sources.py
+          ! grep -nF 'repo_query' api/routers/sources.py
+          ! grep -nF 'SurrealDB' api/routers/sources.py
+      - name: Commit migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "refactor(db): migrate sources router to typed PostgreSQL operations"
+          git push origin HEAD:fix/valt-runtime-hardening

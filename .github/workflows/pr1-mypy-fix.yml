@@ -64,6 +64,28 @@ jobs:
                   ('    "repo_query",\n', ''),
               ],
           )
+
+          rewrite(
+              'scripts/migrate_surreal_to_postgres.py',
+              [
+                  ('        record_count = (\n            await (await connection.execute("SELECT count(*) AS n FROM on_record")).fetchone()\n        )["n"]\n',
+                   '        record_row = await (\n            await connection.execute("SELECT count(*) AS n FROM on_record")\n        ).fetchone()\n        if record_row is None:\n            raise RuntimeError("Could not count PostgreSQL records")\n        record_count = record_row["n"]\n'),
+                  ('        relation_count = (\n            await (\n                await connection.execute("SELECT count(*) AS n FROM on_relation")\n            ).fetchone()\n        )["n"]\n',
+                   '        relation_row = await (\n            await connection.execute("SELECT count(*) AS n FROM on_relation")\n        ).fetchone()\n        if relation_row is None:\n            raise RuntimeError("Could not count PostgreSQL relations")\n        relation_count = relation_row["n"]\n'),
+                  ('        source_embedding_count = (\n            await (\n                await connection.execute("SELECT count(*) AS n FROM source_embedding_pg")\n            ).fetchone()\n        )["n"]\n',
+                   '        embedding_row = await (\n            await connection.execute("SELECT count(*) AS n FROM source_embedding_pg")\n        ).fetchone()\n        if embedding_row is None:\n            raise RuntimeError("Could not count PostgreSQL source embeddings")\n        source_embedding_count = embedding_row["n"]\n'),
+              ],
+          )
+
+          rewrite(
+              'tests/test_postgres_command_queue.py',
+              [
+                  ('        before = (\n            await (\n                await connection.execute(\n                    "SELECT lease_until FROM command_job WHERE id=%s", (job_id,)\n                )\n            ).fetchone()\n        )["lease_until"]\n',
+                   '        before_row = await (\n            await connection.execute(\n                "SELECT lease_until FROM command_job WHERE id=%s", (job_id,)\n            )\n        ).fetchone()\n        assert before_row is not None\n        before = before_row["lease_until"]\n'),
+                  ('        after = (\n            await (\n                await connection.execute(\n                    "SELECT lease_until FROM command_job WHERE id=%s", (job_id,)\n                )\n            ).fetchone()\n        )["lease_until"]\n',
+                   '        after_row = await (\n            await connection.execute(\n                "SELECT lease_until FROM command_job WHERE id=%s", (job_id,)\n            )\n        ).fetchone()\n        assert after_row is not None\n        after = after_row["lease_until"]\n'),
+              ],
+          )
           PY
 
       - name: Install locked dependencies

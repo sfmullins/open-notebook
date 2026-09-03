@@ -1,0 +1,43 @@
+name: PR1 Ruff fix
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-imports:
+    if: github.event.pull_request.number == 1 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Normalize Python imports
+        run: uvx ruff==0.14.13 check . --fix
+
+      - name: Verify Ruff and patch
+        run: |
+          uvx ruff==0.14.13 check .
+          git diff --check
+
+      - name: Commit import formatting
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No Ruff changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "style: normalize Python imports"
+          git push origin "HEAD:${{ github.head_ref }}"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
+import importlib.util
 from pathlib import Path
 
 import certifi
@@ -26,7 +28,20 @@ def test_pycountry_compat_and_podcast_creator_language_resolution() -> None:
     assert english.alpha_2 == "en"
     assert any(language.alpha_2 == "en" for language in pycountry.languages)
 
-    from podcast_creator.language import resolve_language_name
+    # podcast_creator.__init__ eagerly imports its media pipeline, which asks
+    # imageio-ffmpeg for an FFmpeg executable at import time. FFmpeg is an
+    # intentionally external optional runtime dependency in Vält. Load the
+    # installed, self-contained upstream language module directly so this test
+    # exercises its real pycountry consumer without crossing that media boundary.
+    distribution = importlib.metadata.distribution("podcast-creator")
+    language_path = distribution.locate_file("podcast_creator/language.py")
+    spec = importlib.util.spec_from_file_location(
+        "_podcast_creator_language_compat", language_path
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    resolve_language_name = getattr(module, "resolve_language_name")
 
     assert resolve_language_name("pt-BR") == "Portuguese"
     assert resolve_language_name("eng") == "English"

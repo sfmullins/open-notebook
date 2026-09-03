@@ -36,6 +36,13 @@ ENV UV_LINK_MODE=copy
 ENV UV_HTTP_TIMEOUT=120
 COPY pyproject.toml uv.lock ./
 COPY open_notebook/__init__.py ./open_notebook/__init__.py
+# The permissive compatibility facades are part of the first-party package and
+# must exist before uv builds the editable application. The tiktoken cache step
+# below imports requests, which imports the certifi facade.
+COPY certifi ./certifi
+COPY chardet ./chardet
+COPY pycountry ./pycountry
+COPY tqdm ./tqdm
 RUN uv sync --frozen --no-dev
 
 ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
@@ -62,22 +69,21 @@ COPY --from=frontend-builder /app/frontend/.next/standalone /app/frontend/
 COPY --from=frontend-builder /app/frontend/.next/static /app/frontend/.next/static
 COPY --from=frontend-builder /app/frontend/public /app/frontend/public
 COPY --from=frontend-builder /app/frontend/start-server.js /app/frontend/start-server.js
-
-ENV UV_NO_SYNC=1
-ENV VIRTUAL_ENV=/app/.venv
-ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
-ENV API_HOST=0.0.0.0
-ENV UV_CACHE_DIR=/app/data/.cache/uv
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/data/.cache/playwright
-ENV HF_HOME=/app/data/.cache/huggingface
-
 RUN mkdir -p /app/data /var/log/supervisor \
     && chmod +x /app/scripts/wait-for-api.sh /app/scripts/docker-entrypoint.sh
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
+ENV PATH="/app/.venv/bin:$PATH"
+ENV DATA_FOLDER=/app/data
+ENV TIKTOKEN_CACHE_DIR=/app/tiktoken-cache
+ENV API_HOST=0.0.0.0
+ENV FRONTEND_BIND_HOST=0.0.0.0
+ENV PORT=8502
+ENV INTERNAL_API_URL=http://localhost:5055
+
 EXPOSE 8502 5055
 
-# DATABASE_URL (or POSTGRES_URL) must point to a PostgreSQL instance with the
-# pgvector extension available. See docs/7-DEVELOPMENT/dockerless-postgresql.md.
+VOLUME ["/app/data"]
+
 ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

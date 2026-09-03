@@ -20,7 +20,12 @@ def test_chardet_compat_detects_text() -> None:
 
 
 def test_pycountry_compat_and_podcast_creator_language_resolution() -> None:
-    assert pycountry.languages.get(alpha_2="en").name == "English"
+    english = pycountry.languages.get(alpha_2="en")
+    assert english is not None
+    assert english.name == "English"
+    assert english.alpha_2 == "en"
+    assert any(language.alpha_2 == "en" for language in pycountry.languages)
+
     from podcast_creator.language import resolve_language_name
 
     assert resolve_language_name("pt-BR") == "Portuguese"

@@ -6,7 +6,7 @@
 
 services:
   postgres:
-    image: pgvector/pgvector:pg17
+    image: pgvector/pgvector:0.8.6-pg17-bookworm
     environment:
       POSTGRES_USER: open_notebook
       POSTGRES_PASSWORD: open_notebook
@@ -23,13 +23,13 @@ services:
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.33.2
     ports:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
     restart: unless-stopped
-    pull_policy: always
+    pull_policy: if_not_present
 
   open_notebook:
     build:

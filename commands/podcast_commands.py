@@ -17,11 +17,23 @@ from open_notebook.podcasts.models import (
 from open_notebook.utils.model_utils import full_model_dump
 from command_queue import CommandInput, CommandOutput, command
 
-try:
-    from podcast_creator import configure, create_podcast
-except ImportError as e:
-    logger.error(f"Failed to import podcast_creator: {e}")
-    raise ValueError("podcast_creator library not available")
+def _load_podcast_creator():
+    """Load podcast_creator only when podcast generation is requested.
+
+    moviepy/imageio-ffmpeg resolves FFmpeg during import. FFmpeg is deliberately
+    external to the Vält redistributed userland, so normal API/worker startup
+    must not require it. Operators enabling podcast generation provide ffmpeg
+    and may set IMAGEIO_FFMPEG_EXE to its absolute path.
+    """
+    try:
+        from podcast_creator import configure, create_podcast
+    except (ImportError, RuntimeError) as exc:
+        raise RuntimeError(
+            "Podcast generation requires the optional podcast runtime and an "
+            "externally installed FFmpeg executable. Install FFmpeg outside the "
+            "Vält userland boundary and set IMAGEIO_FFMPEG_EXE if it is not on PATH."
+        ) from exc
+    return configure, create_podcast
 
 
 def build_episode_output_dir(podcasts_folder: str = PODCASTS_FOLDER) -> tuple[str, Path]:
@@ -72,12 +84,13 @@ async def generate_podcast_command(
     start_time = time.time()
 
     try:
+        configure, create_podcast = _load_podcast_creator()
         logger.info(
             f"Starting podcast generation for episode: {input_data.episode_name}"
         )
         logger.info(f"Using episode profile: {input_data.episode_profile}")
 
-        # 1. Load Episode and Speaker profiles from SurrealDB
+        # 1. Load Episode and Speaker profiles from PostgreSQL
         episode_profile = await EpisodeProfile.get_by_name(input_data.episode_profile)
         if not episode_profile:
             raise ValueError(

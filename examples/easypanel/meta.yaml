@@ -36,7 +36,7 @@ schema:
     appServiceImage:
       type: string
       title: PostgreSQL-native App Service Image
-      default: ghcr.io/sfmullins/open-notebook:latest
+      default: open-notebook:local
     databaseServiceName:
       type: string
       title: Database Service Name
@@ -44,7 +44,7 @@ schema:
     databaseServiceImage:
       type: string
       title: Database Service Image
-      default: pgvector/pgvector:pg17
+      default: pgvector/pgvector:0.8.6-pg17-bookworm
     appPassword:
       type: string
       title: Open Notebook Password

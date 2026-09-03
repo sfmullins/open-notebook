@@ -1,0 +1,36 @@
+name: PR2 docs cleanup
+
+on:
+  push:
+    branches:
+      - fix/valt-runtime-hardening
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pr2-docs-cleanup
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: fix/valt-runtime-hardening
+      - name: Rewrite and validate active documentation
+        run: python3 scripts/pr2_docs_cleanup.py
+      - name: Commit documentation cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .env.example .github/ISSUE_TEMPLATE/installation_issue.yml .github/RELEASE_PROCESS.md .agents/skills/release/runbook.md docs examples/README.md
+          if git diff --cached --quiet; then
+            echo "No documentation changes required."
+            exit 0
+          fi
+          git commit -m "docs: finish PostgreSQL runtime migration guidance"
+          git push origin HEAD:fix/valt-runtime-hardening

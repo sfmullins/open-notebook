@@ -1,0 +1,126 @@
+name: PR1 migration fixup
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fixup:
+    if: github.event.pull_request.number == 1 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Apply bounded migration fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+
+          def rewrite(path: str, transform):
+              file = root / path
+              before = file.read_text(encoding='utf-8')
+              after = transform(before)
+              if after == before:
+                  print(f'no textual change: {path}')
+              else:
+                  file.write_text(after, encoding='utf-8')
+                  print(f'updated: {path}')
+
+          def replace_record_id_import(text: str) -> str:
+              text = text.replace('from surrealdb import RecordID\n', '')
+              marker = 'from open_notebook.database.repository import ensure_record_id, repo_query\n'
+              native = 'from open_notebook.database.record_id import RecordID\n'
+              if native not in text:
+                  if marker not in text:
+                      raise SystemExit('RecordID insertion marker not found')
+                  text = text.replace(marker, native + marker, 1)
+              return text
+
+          for path in (
+              'open_notebook/ai/models.py',
+              'open_notebook/domain/notebook.py',
+              'open_notebook/podcasts/models.py',
+          ):
+              rewrite(path, replace_record_id_import)
+
+          def update_pyproject(text: str) -> str:
+              updated = text.replace(', "surrealdb*"', '')
+              if '"surrealdb*"' in updated:
+                  raise SystemExit('surrealdb package include still present')
+              return updated
+
+          rewrite('pyproject.toml', update_pyproject)
+
+          def update_boundary(text: str) -> str:
+              if 'ROOT / "surreal_commands",' not in text:
+                  marker = '    ROOT / "open_notebook",\n'
+                  if marker not in text:
+                      raise SystemExit('runtime directory insertion marker not found')
+                  text = text.replace(marker, marker + '    ROOT / "surreal_commands",\n', 1)
+
+              old_dependencies = '''    dependencies = pyproject.get("project", {}).get("dependencies", [])\n    if any(dependency_name(str(item)) == "surrealdb" for item in dependencies):\n        failures.append("pyproject.toml: external SurrealDB SDK dependency is prohibited")\n'''
+              new_dependencies = '''    dependencies = pyproject.get("project", {}).get("dependencies", [])\n    prohibited_dependencies = {"surrealdb", "surreal-commands"}\n    for prohibited in sorted(prohibited_dependencies):\n        if any(dependency_name(str(item)) == prohibited for item in dependencies):\n            failures.append(\n                f"pyproject.toml: external {prohibited} dependency is prohibited"\n            )\n'''
+              if old_dependencies in text:
+                  text = text.replace(old_dependencies, new_dependencies, 1)
+              elif 'prohibited_dependencies = {"surrealdb", "surreal-commands"}' not in text:
+                  raise SystemExit('dependency gate replacement marker not found')
+
+              old_lock = '''    lock = ROOT / "uv.lock"\n    if lock.exists():\n        lock_text = lock.read_text(encoding="utf-8")\n        if re.search(r'(?m)^name\\s*=\\s*"surrealdb"\\s*$', lock_text):\n            failures.append("uv.lock: SurrealDB SDK remains in the locked dependency graph")\n'''
+              new_lock = '''    lock = ROOT / "uv.lock"\n    if lock.exists():\n        lock_text = lock.read_text(encoding="utf-8")\n        for prohibited in ("surrealdb", "surreal-commands"):\n            if re.search(\n                rf'(?m)^name\\s*=\\s*"{re.escape(prohibited)}"\\s*$', lock_text\n            ):\n                failures.append(\n                    f"uv.lock: prohibited {prohibited} package remains in the locked dependency graph"\n                )\n'''
+              if old_lock in text:
+                  text = text.replace(old_lock, new_lock, 1)
+              elif 'for prohibited in ("surrealdb", "surreal-commands"):' not in text:
+                  raise SystemExit('lock gate replacement marker not found')
+              return text
+
+          rewrite('scripts/check_no_surreal_runtime.py', update_boundary)
+
+          route_test = '''import { afterEach, beforeEach, describe, expect, it } from 'vitest'\nimport { GET } from './route'\n\ndescribe('GET /config', () => {\n  const originalEnv = process.env\n\n  beforeEach(() => {\n    process.env = { ...originalEnv }\n    delete process.env.API_URL\n    delete process.env.NEXT_PUBLIC_API_URL\n  })\n\n  afterEach(() => {\n    process.env = originalEnv\n  })\n\n  it('uses API_URL when explicitly configured', async () => {\n    process.env.API_URL = 'https://configured.example.com'\n\n    const response = await GET()\n    const body = await response.json()\n\n    expect(body.apiUrl).toBe('https://configured.example.com')\n  })\n\n  it('uses NEXT_PUBLIC_API_URL when API_URL is absent', async () => {\n    process.env.NEXT_PUBLIC_API_URL = 'https://public.example.com'\n\n    const response = await GET()\n    const body = await response.json()\n\n    expect(body.apiUrl).toBe('https://public.example.com')\n  })\n\n  it('prefers API_URL over NEXT_PUBLIC_API_URL', async () => {\n    process.env.API_URL = 'https://private.example.com'\n    process.env.NEXT_PUBLIC_API_URL = 'https://public.example.com'\n\n    const response = await GET()\n    const body = await response.json()\n\n    expect(body.apiUrl).toBe('https://private.example.com')\n  })\n\n  it('defaults to the same origin when no explicit backend URL is configured', async () => {\n    const response = await GET()\n    const body = await response.json()\n\n    expect(body.apiUrl).toBe('')\n  })\n})\n'''
+          (root / 'frontend/src/app/config/route.test.ts').write_text(route_test, encoding='utf-8')
+          print('updated: frontend/src/app/config/route.test.ts')
+
+          shim = root / 'surrealdb/__init__.py'
+          if shim.exists():
+              shim.unlink()
+              print('removed: surrealdb/__init__.py')
+          shim_dir = root / 'surrealdb'
+          if shim_dir.exists():
+              try:
+                  shim_dir.rmdir()
+              except OSError as exc:
+                  raise SystemExit(f'surrealdb compatibility directory not empty: {exc}')
+          PY
+
+      - name: Regenerate Python lockfile
+        run: uv lock
+
+      - name: Verify runtime boundary
+        run: python3 scripts/check_no_surreal_runtime.py
+
+      - name: Verify clean patch
+        run: git diff --check
+
+      - name: Commit migration fixes
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No fixup changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: close PostgreSQL migration blockers"
+          git push origin "HEAD:${{ github.head_ref }}"

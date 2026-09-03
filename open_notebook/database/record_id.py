@@ -8,6 +8,7 @@ without importing the SurrealDB client.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Union
 
@@ -28,9 +29,20 @@ class RecordID:
             raise ValueError(f"Invalid record id: {self.id!r}")
 
     @classmethod
-    def parse(cls, value: Union[str, "RecordID"]) -> "RecordID":
+    def parse(
+        cls, value: Union[str, "RecordID", Mapping[str, object]]
+    ) -> "RecordID":
         if isinstance(value, cls):
             return value
+        if isinstance(value, Mapping):
+            table = value.get("table")
+            key = value.get("id")
+            if isinstance(table, str) and isinstance(key, str):
+                return cls(table=table, id=key)
+            raise ValueError(
+                "Record id mapping must contain string 'table' and 'id' fields: "
+                f"{value!r}"
+            )
         if not isinstance(value, str) or ":" not in value:
             raise ValueError(f"Record id must use 'table:key' form: {value!r}")
         table, key = value.split(":", 1)

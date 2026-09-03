@@ -1,0 +1,7 @@
+PostgreSQL-only runtime boundary violations detected:
+  - dev-init.sh: obsolete SurrealDB runtime configuration
+  - docker-compose.override.yml.example: obsolete SurrealDB runtime configuration
+  - examples/docker-compose-single.yml: obsolete SurrealDB runtime configuration
+
+Only scripts/migrate_surreal_to_postgres.py may connect to or configure the historical SurrealDB source database.
+exit_code=1

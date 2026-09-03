@@ -249,10 +249,12 @@ async def try_query(query_str: str, vars: Mapping[str, Any] | None = None) -> An
 
     # Notebook.get_notes(): nested relation fetch.
     if "SELECT IN AS NOTE FROM ARTIFACT WHERE OUT=$ID" in upper:
-        omit: set[str] = {"embedding"}
+        note_omit: set[str] = {"embedding"}
         if "OMIT NOTE.CONTENT" in upper:
-            omit.add("content")
-        rows = await _linked_records("artifact", _rid(params["id"]), "note", omit=omit)
+            note_omit.add("content")
+        rows = await _linked_records(
+            "artifact", _rid(params["id"]), "note", omit=note_omit
+        )
         return [{"note": row} for row in rows]
 
     # Notebook.get_chat_sessions(). Legacy shape wraps the fetched record in a list.

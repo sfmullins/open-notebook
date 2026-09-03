@@ -78,25 +78,25 @@ async def test_heartbeat_extends_owned_lease() -> None:
             """,
             (job_id,),
         )
-        before = (
-            await (
-                await connection.execute(
-                    "SELECT lease_until FROM command_job WHERE id=%s", (job_id,)
-                )
-            ).fetchone()
-        )["lease_until"]
+        before_row = await (
+            await connection.execute(
+                "SELECT lease_until FROM command_job WHERE id=%s", (job_id,)
+            )
+        ).fetchone()
+        assert before_row is not None
+        before = before_row["lease_until"]
         await connection.commit()
 
     assert await heartbeat(job_id, "worker-1", lease_seconds=120) is True
 
     async with db_connection() as connection:
-        after = (
-            await (
-                await connection.execute(
-                    "SELECT lease_until FROM command_job WHERE id=%s", (job_id,)
-                )
-            ).fetchone()
-        )["lease_until"]
+        after_row = await (
+            await connection.execute(
+                "SELECT lease_until FROM command_job WHERE id=%s", (job_id,)
+            )
+        ).fetchone()
+        assert after_row is not None
+        after = after_row["lease_until"]
 
     assert after > before
 

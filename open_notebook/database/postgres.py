@@ -12,12 +12,12 @@ import json
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Mapping
+from typing import Any, AsyncIterator, Mapping, cast
 from uuid import uuid4
 
 from loguru import logger
 from psycopg import AsyncConnection
-from psycopg.rows import dict_row
+from psycopg.rows import DictRow, dict_row
 from psycopg_pool import AsyncConnectionPool
 
 from open_notebook.database.record_id import RecordID
@@ -63,10 +63,10 @@ async def get_pool() -> AsyncConnectionPool:
 
 
 @asynccontextmanager
-async def db_connection() -> AsyncIterator[AsyncConnection]:
+async def db_connection() -> AsyncIterator[AsyncConnection[DictRow]]:
     pool = await get_pool()
     async with pool.connection() as connection:
-        yield connection
+        yield cast(AsyncConnection[DictRow], connection)
 
 
 async def close_pool() -> None:

@@ -528,9 +528,9 @@ async def repo_insert(
             source_id = ensure_record_id(row["source"])
             grouped.setdefault(str(source_id), []).append(row)
         created: list[dict[str, Any]] = []
-        for source_id, rows in grouped.items():
+        for source_ref, rows in grouped.items():
             created.extend(
-                await replace_source_embeddings(ensure_record_id(source_id), rows)
+                await replace_source_embeddings(ensure_record_id(source_ref), rows)
             )
         return created
 
@@ -557,7 +557,6 @@ __all__ = [
     "repo_create",
     "repo_delete",
     "repo_insert",
-    "repo_query",
     "repo_relate",
     "repo_update",
     "repo_upsert",

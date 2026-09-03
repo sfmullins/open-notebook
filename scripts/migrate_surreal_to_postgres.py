@@ -77,19 +77,24 @@ class SurrealReader:
 async def postgres_is_empty() -> bool:
     await ensure_schema()
     async with db_connection() as connection:
-        record_count = (
-            await (await connection.execute("SELECT count(*) AS n FROM on_record")).fetchone()
-        )["n"]
-        relation_count = (
-            await (
-                await connection.execute("SELECT count(*) AS n FROM on_relation")
-            ).fetchone()
-        )["n"]
-        source_embedding_count = (
-            await (
-                await connection.execute("SELECT count(*) AS n FROM source_embedding_pg")
-            ).fetchone()
-        )["n"]
+        record_row = await (
+            await connection.execute("SELECT count(*) AS n FROM on_record")
+        ).fetchone()
+        if record_row is None:
+            raise RuntimeError("Could not count PostgreSQL records")
+        record_count = record_row["n"]
+        relation_row = await (
+            await connection.execute("SELECT count(*) AS n FROM on_relation")
+        ).fetchone()
+        if relation_row is None:
+            raise RuntimeError("Could not count PostgreSQL relations")
+        relation_count = relation_row["n"]
+        embedding_row = await (
+            await connection.execute("SELECT count(*) AS n FROM source_embedding_pg")
+        ).fetchone()
+        if embedding_row is None:
+            raise RuntimeError("Could not count PostgreSQL source embeddings")
+        source_embedding_count = embedding_row["n"]
     return (
         int(record_count) == 0
         and int(relation_count) == 0

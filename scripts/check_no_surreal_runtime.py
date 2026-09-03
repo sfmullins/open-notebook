@@ -66,6 +66,28 @@ PATTERNS = (
     ),
 )
 
+ACTIVE_DOC_FILES = (
+    ROOT / ".env.example",
+    ROOT / ".github" / "ISSUE_TEMPLATE" / "installation_issue.yml",
+    ROOT / ".github" / "RELEASE_PROCESS.md",
+    ROOT / ".agents" / "skills" / "release" / "runbook.md",
+    ROOT / ".claude" / "skills" / "release" / "runbook.md",
+)
+ACTIVE_DOC_ALLOWED = {
+    ROOT / "docs" / "7-DEVELOPMENT" / "dockerless-postgresql.md",
+    ROOT / "docs" / "7-DEVELOPMENT" / "decisions" / "ADR-001-surrealdb.md",
+}
+ACTIVE_DOC_PATTERNS = (
+    (
+        re.compile(r"\bSURREAL_[A-Z0-9_]+\b"),
+        "obsolete SurrealDB runtime configuration in active documentation",
+    ),
+    (
+        re.compile(r"surrealdb/surrealdb(?::[^\s`\"']+)?", re.I),
+        "SurrealDB runtime image in active documentation",
+    ),
+)
+
 
 def files() -> list[Path]:
     found = {path for path in ROOT_FILES if path.exists()}
@@ -76,6 +98,14 @@ def files() -> list[Path]:
                 for path in directory.rglob("*")
                 if path.is_file() and path.suffix.lower() in SUFFIXES
             )
+    return sorted(found)
+
+
+def active_docs() -> list[Path]:
+    found = {path for path in ACTIVE_DOC_FILES if path.exists()}
+    docs = ROOT / "docs"
+    if docs.exists():
+        found.update(path for path in docs.rglob("*.md") if path.is_file())
     return sorted(found)
 
 
@@ -93,6 +123,14 @@ def main() -> int:
         except UnicodeDecodeError:
             continue
         for pattern, description in PATTERNS:
+            if pattern.search(text):
+                failures.append(f"{path.relative_to(ROOT)}: {description}")
+
+    for path in active_docs():
+        if path in ACTIVE_DOC_ALLOWED:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for pattern, description in ACTIVE_DOC_PATTERNS:
             if pattern.search(text):
                 failures.append(f"{path.relative_to(ROOT)}: {description}")
 
@@ -119,7 +157,7 @@ def main() -> int:
             print(f"  - {failure}", file=sys.stderr)
         return 1
 
-    print("PostgreSQL-only runtime boundary clean.")
+    print("PostgreSQL-only runtime and active-document boundary clean.")
     return 0
 
 

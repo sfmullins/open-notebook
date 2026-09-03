@@ -16,7 +16,6 @@ from fastapi import (
 from fastapi.responses import FileResponse, Response
 from loguru import logger
 from pydantic import ValidationError
-from surreal_commands import execute_command_sync, submit_command
 
 from api.command_service import CommandService
 from api.credentials_service import validate_url
@@ -42,6 +41,7 @@ from open_notebook.exceptions import (
     OpenNotebookError,
     UnsupportedTypeException,
 )
+from surreal_commands import execute_command_sync, submit_command
 
 router = APIRouter()
 

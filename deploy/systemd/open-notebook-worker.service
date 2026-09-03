@@ -1,0 +1,22 @@
+[Unit]
+Description=Open Notebook Background Worker
+After=network-online.target postgresql.service open-notebook-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=open-notebook
+Group=open-notebook
+WorkingDirectory=/opt/open-notebook
+EnvironmentFile=/etc/open-notebook/open-notebook.env
+ExecStart=/opt/open-notebook/.venv/bin/surreal-commands-worker --import-modules commands --max-tasks 5
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/open-notebook /opt/open-notebook/data
+
+[Install]
+WantedBy=multi-user.target

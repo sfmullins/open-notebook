@@ -5,12 +5,12 @@ from typing import Any, ClassVar, Dict, List, Literal, Optional, Union
 
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from surreal_commands import submit_command
-from surrealdb import RecordID
 
+from open_notebook.database.record_id import RecordID
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel
 from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
+from surreal_commands import submit_command
 
 
 class Notebook(ObjectModel):

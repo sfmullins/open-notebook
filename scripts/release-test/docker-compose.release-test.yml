@@ -1,10 +1,17 @@
 services:
-  surrealdb:
-    image: surrealdb/surrealdb:v2
-    command: start --log info --user root --pass root rocksdb:/mydata/test.db
-    user: root
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: open_notebook
+      POSTGRES_PASSWORD: open_notebook
+      POSTGRES_DB: ${RC_POSTGRES_DB:-open_notebook}
     volumes:
-      - ${DATA_DIR:?set DATA_DIR}/surreal:/mydata
+      - ${DATA_DIR:?set DATA_DIR}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U open_notebook -d ${RC_POSTGRES_DB:-open_notebook}"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
 
   app:
     image: ${APP_IMAGE:?set APP_IMAGE}
@@ -12,31 +19,19 @@ services:
       - "127.0.0.1:${API_PORT:?set API_PORT}:5055"
       - "127.0.0.1:${FE_PORT:?set FE_PORT}:8502"
     environment:
-      # Without an explicit API_URL the frontend's /config points the BROWSER
-      # at host:5055 — on a dev machine that is the development API, not this
-      # stack (silent data crossover between environments!)
       - API_URL=${RC_API_URL:-}
       - OPEN_NOTEBOOK_ENCRYPTION_KEY=${RC_ENCRYPTION_KEY:-release-test-key}
-      - SURREAL_URL=ws://surrealdb:8000/rpc
-      - SURREAL_USER=root
-      - SURREAL_PASSWORD=root
-      - SURREAL_NAMESPACE=${RC_SURREAL_NS:-open_notebook}
-      - SURREAL_DATABASE=${RC_SURREAL_DB:-open_notebook}
-      # Opt-in heavy runtimes: empty by default (fresh/upgrade tests stay fast);
-      # rc-stack.sh --with-runtimes sets these to install Docling/Crawl4AI so the
-      # published image's opt-in path can be exercised with real data.
+      - DATABASE_URL=postgresql://open_notebook:open_notebook@postgres:5432/${RC_POSTGRES_DB:-open_notebook}
+      - POSTGRES_URL=postgresql://open_notebook:open_notebook@postgres:5432/${RC_POSTGRES_DB:-open_notebook}
       - OPEN_NOTEBOOK_ENABLE_DOCLING=${RC_ENABLE_DOCLING:-}
       - OPEN_NOTEBOOK_ENABLE_CRAWL4AI=${RC_ENABLE_CRAWL4AI:-}
     volumes:
       - ${DATA_DIR}/notebook:/app/data
-    # Reach host services (e.g. Ollama on localhost:11434) via
-    # host.docker.internal on Linux too; Docker Desktop resolves it natively.
-    # Credentials pointing at local services must use
-    # http://host.docker.internal:<port> when the app runs in a container.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - surrealdb
+      postgres:
+        condition: service_healthy
 
   proxy:
     image: nginx:alpine

@@ -1,0 +1,23 @@
+[Unit]
+Description=Open Notebook Frontend
+After=network-online.target open-notebook-api.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=open-notebook
+Group=open-notebook
+WorkingDirectory=/opt/open-notebook/frontend
+EnvironmentFile=/etc/open-notebook/open-notebook.env
+Environment=NODE_ENV=production
+Environment=INTERNAL_API_URL=http://127.0.0.1:5055
+ExecStart=/usr/bin/npm start -- --hostname 0.0.0.0 --port 8502
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

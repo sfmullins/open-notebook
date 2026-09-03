@@ -2,8 +2,8 @@ from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
 
 from loguru import logger
 from pydantic import ConfigDict, Field, field_validator
-from surrealdb import RecordID
 
+from open_notebook.database.record_id import RecordID
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.base import ObjectModel
 

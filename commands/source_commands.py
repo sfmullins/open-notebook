@@ -3,12 +3,12 @@ from typing import Any, Dict, List, Optional
 
 from langchain_core.runnables import RunnableConfig
 from loguru import logger
-from surreal_commands import CommandInput, CommandOutput, command
 
 from open_notebook.database.repository import ensure_record_id
 from open_notebook.domain.notebook import Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import ConfigurationError
+from surreal_commands import CommandInput, CommandOutput, command
 
 try:
     from open_notebook.graphs.source import source_graph

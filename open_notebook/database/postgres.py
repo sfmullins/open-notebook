@@ -200,17 +200,18 @@ async def _create_pool() -> asyncpg.Pool:
 
 
 def _prune_closed_loop_pools() -> None:
-    """Drop pools whose owning event loops have already been closed.
+    """Forget pools whose owning event loops have already been closed.
 
     asyncpg pools are event-loop-bound. The application has a long-lived API loop
     plus short-lived compatibility loops created by synchronous command callers,
     while pytest may create a new loop per test. Keeping one process-global pool
-    therefore risks handing loop-bound transports to another loop. Closed-loop
-    pools can no longer be drained asynchronously, so terminate them synchronously.
+    therefore risks handing loop-bound transports to another loop. Once an owner
+    loop is closed, asyncpg transport cleanup cannot safely call back into that
+    loop, so this registry must only release its references. Live-loop shutdowns
+    are drained normally by ``close_pool`` before their loop is closed.
     """
-    for owner_loop, pool in list(_pools.items()):
+    for owner_loop in list(_pools):
         if owner_loop.is_closed():
-            pool.terminate()
             _pools.pop(owner_loop, None)
     for owner_loop in list(_pool_tasks):
         if owner_loop.is_closed():

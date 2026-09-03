@@ -13,6 +13,7 @@ LGPL PostgreSQL client in the Vält application layer.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -29,7 +30,8 @@ from open_notebook.database.record_id import RecordID
 _DEFAULT_DATABASE_URL = (
     "postgresql://open_notebook:open_notebook@localhost:5432/open_notebook"
 )
-_pool: asyncpg.Pool | None = None
+_pools: dict[asyncio.AbstractEventLoop, asyncpg.Pool] = {}
+_pool_tasks: dict[asyncio.AbstractEventLoop, asyncio.Task[asyncpg.Pool]] = {}
 _schema_ready = False
 
 
@@ -185,19 +187,60 @@ class _ConnectionAdapter:
             await transaction.rollback()
 
 
+async def _create_pool() -> asyncpg.Pool:
+    pool = await asyncpg.create_pool(
+        dsn=get_database_url(),
+        min_size=1,
+        max_size=max(2, int(os.getenv("OPEN_NOTEBOOK_DB_POOL_SIZE", "10"))),
+        init=_init_connection,
+    )
+    if pool is None:
+        raise RuntimeError("asyncpg did not create a PostgreSQL connection pool")
+    return pool
+
+
+def _prune_closed_loop_pools() -> None:
+    """Drop pools whose owning event loops have already been closed.
+
+    asyncpg pools are event-loop-bound. The application has a long-lived API loop
+    plus short-lived compatibility loops created by synchronous command callers,
+    while pytest may create a new loop per test. Keeping one process-global pool
+    therefore risks handing loop-bound transports to another loop. Closed-loop
+    pools can no longer be drained asynchronously, so terminate them synchronously.
+    """
+    for owner_loop, pool in list(_pools.items()):
+        if owner_loop.is_closed():
+            pool.terminate()
+            _pools.pop(owner_loop, None)
+    for owner_loop in list(_pool_tasks):
+        if owner_loop.is_closed():
+            _pool_tasks.pop(owner_loop, None)
+
+
 async def get_pool() -> asyncpg.Pool:
-    global _pool
-    if _pool is None:
-        pool = await asyncpg.create_pool(
-            dsn=get_database_url(),
-            min_size=1,
-            max_size=max(2, int(os.getenv("OPEN_NOTEBOOK_DB_POOL_SIZE", "10"))),
-            init=_init_connection,
-        )
-        if pool is None:
-            raise RuntimeError("asyncpg did not create a PostgreSQL connection pool")
-        _pool = pool
-    return _pool
+    loop = asyncio.get_running_loop()
+    _prune_closed_loop_pools()
+
+    pool = _pools.get(loop)
+    if pool is not None:
+        return pool
+
+    task = _pool_tasks.get(loop)
+    if task is None:
+        task = loop.create_task(_create_pool())
+        _pool_tasks[loop] = task
+
+    try:
+        pool = await task
+    except BaseException:
+        if _pool_tasks.get(loop) is task:
+            _pool_tasks.pop(loop, None)
+        raise
+
+    if _pool_tasks.get(loop) is task:
+        _pool_tasks.pop(loop, None)
+    _pools[loop] = pool
+    return pool
 
 
 @asynccontextmanager
@@ -219,11 +262,29 @@ async def db_connection() -> AsyncIterator[_ConnectionAdapter]:
 
 
 async def close_pool() -> None:
-    global _pool, _schema_ready
-    if _pool is not None:
-        await _pool.close()
-        _pool = None
-    _schema_ready = False
+    """Close the pool owned by the current event loop.
+
+    Other loops may legitimately own independent pools in the same process, so a
+    shutdown in one loop must not tear down live connections belonging to another.
+    """
+    global _schema_ready
+    loop = asyncio.get_running_loop()
+
+    task = _pool_tasks.pop(loop, None)
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    pool = _pools.pop(loop, None)
+    if pool is not None:
+        await pool.close()
+
+    _prune_closed_loop_pools()
+    if not _pools and not _pool_tasks:
+        _schema_ready = False
 
 
 async def ensure_schema() -> None:

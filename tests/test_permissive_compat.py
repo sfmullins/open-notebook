@@ -36,7 +36,7 @@ def test_pycountry_compat_and_podcast_creator_language_resolution() -> None:
     distribution = importlib.metadata.distribution("podcast-creator")
     language_path = distribution.locate_file("podcast_creator/language.py")
     spec = importlib.util.spec_from_file_location(
-        "_podcast_creator_language_compat", language_path
+        "_podcast_creator_language_compat", str(language_path)
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)

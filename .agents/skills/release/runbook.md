@@ -24,14 +24,16 @@ done
 
 ```bash
 # 1. Identify the PostgreSQL instance from DATABASE_URL.
-# 2. Take a consistent logical copy from the running instance:
-pg_dump --format=custom --file=/tmp/dev-dump.pg "$DATABASE_URL"
+# 2. Take a consistent plain-SQL logical copy from the running instance.
+#    rc-stack.sh imports supplied dumps through psql, so do not use pg_dump's
+#    custom/archive format here.
+pg_dump --format=plain --file=/tmp/dev-dump.sql "$DATABASE_URL"
 # 3. Boot (rc-stack.sh docker-pulls the pushed tag by default, so a local
 #    build can't shadow the registry artifact):
-make release-stack TAG=<ver> DUMP=/tmp/dev-dump.surql
+make release-stack TAG=<ver> DUMP=/tmp/dev-dump.sql
 #    To exercise the opt-in heavy runtimes (Docling + Crawl4AI) on the pushed
-#    image with this data, append the flag (first boot installs them, ~minutes):
-#    bash scripts/release-test/rc-stack.sh up <ver> /tmp/dev-dump.surql --with-runtimes
+#    image with this data, append the flag:
+#    bash scripts/release-test/rc-stack.sh up <ver> /tmp/dev-dump.sql --with-runtimes
 # 4. Sanity: credentials decrypt (uses the dev encryption key from .env):
 curl -s http://localhost:15055/api/credentials | python3 -c "import json,sys; c=json.load(sys.stdin); print(len(c), 'creds,', sum(1 for x in c if x.get('decryption_error')), 'decrypt errors')"
 # 5. Opt-in gating is only meaningful on this fresh image (a dev venv may have
@@ -64,7 +66,7 @@ done
 
 ```bash
 make release-stack-down
-rm -f /tmp/dev-dump.surql; rm -rf /tmp/onrel-*
+rm -f /tmp/dev-dump.sql; rm -rf /tmp/onrel-*
 docker ps --format '{{.Names}}' | grep onrel   # must be empty
 git status --short                              # must be clean on main
 ```

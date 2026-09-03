@@ -82,6 +82,29 @@ COPYLEFT_FRAGMENTS = {
 APP_METADATA_EXCEPTIONS: dict[tuple[str, str], str] = {}
 
 
+def artifact_paths(artifact: dict[str, Any]) -> list[str]:
+    paths: list[str] = []
+    for location in artifact.get("locations") or []:
+        if isinstance(location, dict) and location.get("path"):
+            paths.append(str(location["path"]))
+    return paths
+
+
+def is_os_owned_python(artifact: dict[str, Any]) -> bool:
+    return any(
+        path.startswith("/usr/lib/python3/dist-packages/")
+        or path.startswith("/usr/lib/python3.") and "/dist-packages/" in path
+        for path in artifact_paths(artifact)
+    )
+
+
+def is_owned_next_bundle(artifact: dict[str, Any]) -> bool:
+    return any(
+        "/node_modules/next/dist/compiled/" in path
+        for path in artifact_paths(artifact)
+    )
+
+
 def licence_values(artifact: dict[str, Any]) -> list[str]:
     values: list[str] = []
     for item in artifact.get("licenses") or []:
@@ -145,6 +168,20 @@ def main() -> int:
         version = str(artifact.get("version") or "<unknown>")
         values = licence_values(artifact)
         seen[kind] += 1
+
+        if kind == "python" and is_os_owned_python(artifact):
+            for value in values:
+                lower = value.lower()
+                if any(fragment in lower for fragment in PROHIBITED_FRAGMENTS):
+                    failures.append(
+                        f"{kind}:{name}@{version}: prohibited OS-owned Python licence term {value!r}"
+                    )
+            continue
+
+        if kind == "npm" and is_owned_next_bundle(artifact):
+            # Next.js is itself policy-checked; its dist/compiled modules are
+            # vendored implementation details with incomplete nested metadata.
+            continue
 
         if kind in APP_TYPES:
             key = (kind, name)

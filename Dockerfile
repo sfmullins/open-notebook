@@ -19,7 +19,8 @@ RUN i=0; until npm ci; do \
     done
 
 COPY frontend/ ./
-RUN npm run build
+RUN npm run build \
+ && rm -rf .next/standalone/node_modules/sharp .next/standalone/node_modules/@img
 
 # Stage 2: Backend builder
 FROM python:3.12.14-slim-trixie AS backend-builder

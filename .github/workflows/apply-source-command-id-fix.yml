@@ -1,0 +1,93 @@
+name: Apply source command ID regression fix
+
+on:
+  push:
+    branches:
+      - fix/postgres-source-command-id
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: fix/postgres-source-command-id
+          fetch-depth: 0
+
+      - name: Apply domain fix and regression test
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          domain = Path("open_notebook/domain/notebook.py")
+          text = domain.read_text()
+          old = '''    @field_validator("command", mode="before")
+              @classmethod
+              def parse_command(cls, value):
+                  """Parse command field to ensure RecordID format"""
+                  if isinstance(value, str) and value:
+                      return ensure_record_id(value)
+                  return value
+          '''
+          # Keep the replacement indentation exactly as it exists in the source.
+          old = old.replace("              ", "    ")
+          new = '''    @field_validator("command", mode="before")
+              @classmethod
+              def parse_command(cls, value):
+                  """Normalize command IDs from strings or serialized RecordID mappings."""
+                  if isinstance(value, str) and value:
+                      return ensure_record_id(value)
+                  if isinstance(value, dict):
+                      return RecordID.parse(value)
+                  return value
+          '''
+          new = new.replace("              ", "    ")
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one command validator block, found {text.count(old)}")
+          domain.write_text(text.replace(old, new, 1))
+
+          test = Path("tests/test_source_command_record_id.py")
+          test.write_text('''"""Regression tests for PostgreSQL source command references."""
+
+from open_notebook.database.record_id import RecordID
+from open_notebook.domain.notebook import Source
+
+
+def test_source_command_survives_strict_model_dump_round_trip():
+    """ObjectModel.save() strictly revalidates model_dump(); RecordID must rehydrate."""
+    source = Source(id="source:123", title="Test", command="command:456")
+
+    dumped = source.model_dump()
+    assert dumped["command"] == {"table": "command", "id": "456"}
+
+    validated = Source.model_validate(dumped, strict=True)
+    assert isinstance(validated.command, RecordID)
+    assert str(validated.command) == "command:456"
+
+
+def test_source_prepare_save_data_preserves_command_reference():
+    """The PostgreSQL save payload keeps the command reference as one RecordID."""
+    source = Source(id="source:123", title="Test", command="command:456")
+
+    data = source._prepare_save_data()
+
+    assert isinstance(data["command"], RecordID)
+    assert str(data["command"]) == "command:456"
+''')
+
+          Path(".github/workflows/apply-source-command-id-fix.yml").unlink()
+          PY
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add open_notebook/domain/notebook.py tests/test_source_command_record_id.py .github/workflows/apply-source-command-id-fix.yml
+          git commit -m "fix(postgres): preserve source command IDs across validation"
+          git push origin HEAD:fix/postgres-source-command-id

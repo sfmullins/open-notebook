@@ -315,9 +315,11 @@ class Source(ObjectModel):
     @field_validator("command", mode="before")
     @classmethod
     def parse_command(cls, value):
-        """Parse command field to ensure RecordID format"""
+        """Normalize command IDs from strings or serialized RecordID mappings."""
         if isinstance(value, str) and value:
             return ensure_record_id(value)
+        if isinstance(value, dict):
+            return RecordID.parse(value)
         return value
 
     @field_validator("id", mode="before")

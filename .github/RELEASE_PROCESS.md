@@ -1,197 +1,183 @@
 # Release Process
 
-Open Notebook uses a flow-driven release process. Work moves from `ready`
-issues into pull requests, pull requests merge to `main`, and maintainers cut a
-version when the branch has enough validated change to ship.
+This document governs release confidence for the Vält `open-notebook` fork.
 
-This document covers both the **mechanics** (how to cut, build and publish) and
-the **confidence process** (how we know a release is good before users get it).
-It was redesigned during the v1.11.0 release ([ADR-005](../docs/7-DEVELOPMENT/decisions/ADR-005-release-confidence-process.md)).
+The fork currently has **one permanent GitHub Actions workflow**:
+`.github/workflows/test.yml`. It verifies the source tree, migration boundary,
+frontend security state, and final container artefact. It does **not** publish
+Docker/OCI images, development images, Git tags, or GitHub releases.
 
-## Release Model
+Historical upstream instructions that refer to `build-and-release.yml`, `v1-dev`,
+`v1-latest`, `lfnovo/*` registries, or release-triggered image publication are not
+operative in this fork.
 
-- Patch releases ship backwards-compatible fixes.
-- Minor releases ship backwards-compatible features and improvements.
-- Major releases are planned with a milestone when they include breaking
-  changes or migrations that need user coordination.
-- Use the `in-dev-build` label for changes available in development images and
-  `released` for shipped work. (The `released` label was recreated during
-  v1.12.0 — it had been dropped from the curated label taxonomy while this
-  document still required it. If a label this document references is missing,
-  recreate it rather than skipping the step.)
+The underlying confidence model originated in the upstream release process; see
+[ADR-005](../docs/7-DEVELOPMENT/decisions/ADR-005-release-confidence-process.md).
 
-## Normal Flow
+## Release model
 
-1. Triage issues into `ready` once the scope and design are clear.
-2. Implement each change in a focused pull request linked to the approved issue.
-3. Merge the pull request after review and required checks pass.
-4. Let the development build publish the `v1-dev` image from `main`.
-5. Cut a stable release when `main` has a coherent set of changes ready for
-   users — following the confidence process below.
+- Patch releases contain backwards-compatible fixes.
+- Minor releases contain backwards-compatible features and improvements.
+- Major releases require explicit planning for breaking changes and migrations.
+- Pull requests merge to `main` only after the permanent verification gates are
+  satisfied.
+- A tag or GitHub release is release metadata only. It does not imply that a Vält
+  runtime artefact has been published.
 
-## The Confidence Process
+## Permanent verification gates
 
-Releases keep getting bigger; ad-hoc verification does not scale. Before
-cutting, run this sequence:
+A candidate is not releasable unless the `test.yml` run for the candidate commit is
+green. The workflow currently enforces:
+
+1. **Runtime boundary** — PostgreSQL/pgvector is the only application database;
+   removed Surreal runtime APIs/configuration may not re-enter the normal runtime.
+2. **Backend quality** — dependency lock, Ruff, mypy, and the full backend pytest
+   suite.
+3. **Frontend quality/security** — clean npm install, lint, tests, production build,
+   and `npm audit --audit-level=moderate`.
+4. **Legacy migration parity** — a real pinned SurrealDB 2.6.5 source is migrated to
+   PostgreSQL and checked for record/ID, relation, notebook/podcast, embedding,
+   vector-search, text-search, and non-empty-target parity.
+5. **Final-image SBOM/licence policy** — the final image is built, inventoried with
+   the pinned Syft release, and checked by the fail-closed licence policy.
+6. **Documentation links** — repository documentation links are checked.
+
+Run or inspect the workflow with:
+
+```bash
+gh workflow run test.yml --ref main
+gh run list --workflow=test.yml --limit 1
+gh run watch <run-id> --exit-status
+```
+
+## Confidence process
 
 ### 0. Changelog audit
 
-Diff `git log <last-tag>..main` against the `[Unreleased]` section of the
-CHANGELOG. Every merged PR must be represented (entries reference the issue
-number when one exists, the PR number otherwise). The changelog is the input
-for both the test plan and the release notes — close the gaps first, via PR.
+Diff `git log <last-tag>..main` against `[Unreleased]` in the changelog when preparing
+a versioned release. Every material merged change should be represented.
 
 ### 1. Risk-based test matrix
 
-Build a matrix from the actual release diff: each change → what it can break
-and for whom → which bucket tests it. Pay special attention to
-**"does the protection break legitimate use?"** for security changes (e.g. an
-SSRF guard vs. self-hosted Ollama on localhost) and to anything a reverse
-proxy, an upgrade, or a big upload would exercise.
+For changes beyond the permanent suite, map each material change to what it can
+break and the evidence required to validate it. Security changes must also prove
+that the protection does not block legitimate operation.
 
-Buckets:
+### 2. Test the artefact, not only the repository
 
-- **A — automated, high confidence, run now**: full backend suite, frontend
-  lint/tests/production build, the smoke-e2e agent (full API happy path + UI
-  verification), targeted regression probes for the release's specific risks,
-  dependency audit.
-- **B — automatable with investment**: decide per item whether to build the
-  muscle now (it compounds: the image gate below started as a bucket-B item)
-  or verify manually this once.
-- **C — needs the release owner**: real provider credentials, real TTS podcast
-  generation, visual/UX judgment, and the final check of the pushed image.
-
-### 2. The image gate — test the artifact, not the repo
-
-A green suite on `main` is not a working image. Run:
+A green source suite is not proof that a container artefact starts correctly. For a
+local candidate:
 
 ```bash
-make docker-build-local          # builds <version> + local tags
+make docker-build-local
 make release-test TAG=<new> OLD_TAG=<previous>
 ```
 
-This runs two scenarios against real containers (`scripts/release-test/`):
+The Dockerfile/container path is an operator/developer deployment reference. It is
+not, by itself, the Vält shipped-userland boundary.
 
-- **Fresh install**: empty DB → migrations on boot → in-image worker processes
-  a source → API/frontend/nginx-proxied checks.
-- **Upgrade**: boot the *published* previous image, seed data, swap to the new
-  image on the same volume → migrations apply, data survives.
+### 3. Fix loop
 
-Caveat: `docker-build-local` tags with the current `pyproject.toml` version —
-`docker pull` the genuine previous tag before the upgrade test so you are not
-comparing the new build against itself.
+Any blocker becomes a focused PR. Re-run the permanent suite after each merge and
+repeat artefact/manual checks where the fix can affect them. Pre-existing unrelated
+issues should not be pulled into a release unless they block the release boundary.
 
-### 3. Fix loop with a re-test policy
+## PostgreSQL and legacy migration boundary
 
-Findings become focused PRs through the normal review flow. After each merge:
-the cheap suite always re-runs; smoke/image gates re-run only if the fix
-touches what they cover; manual verification is not repeated unless the fix
-touches what was manually verified. Pre-existing bugs found along the way that
-are not release regressions become backlog issues instead of scope creep.
+PostgreSQL/pgvector is the only runtime database.
 
-## Cutting A Stable Release
+SurrealDB is retained solely as a legacy import source and CI migration fixture. The
+migration utility is `scripts/migrate_surreal_to_postgres.py`; migration-specific
+`SURREAL_*` settings are permitted only at that boundary. They are not runtime
+configuration.
 
-1. Confirm `main` is green and the confidence process above has run.
-2. Open the **cut PR**: bump `pyproject.toml`, date the `[Unreleased]` section
-   as `[<version>] - <date>`.
-3. After merge: `make tag`.
-4. Build and push version images **via CI** (it holds the registry
-   credentials): trigger the *Build and Release* workflow with
-   `push_latest=false`. Local `make docker-push` also works but requires
-   `docker login` on both registries.
-5. **Verify the pushed image** (bucket C, final gate): run it locally with
-   `make release-stack TAG=<version> [DUMP=<dev-data-dump>]` — a browsable,
-   isolated stack, optionally with a copy of real data — and walk the core
-   flows in the browser.
-6. Publish the GitHub release. A non-prerelease publication triggers the
-   workflow again and pushes the `v1-latest` tags automatically.
-7. Verify the `v1-latest` manifests on Docker Hub and GHCR (both arches, both
-   variants), and mark shipped issues with `released`.
+The importer must refuse a non-empty PostgreSQL target unless the operator
+explicitly requests the documented override. Record-only, relation-only,
+source-embedding-only, and record-embedding-only targets all count as non-empty.
 
-## Communication
+## Runtime and licence boundary
 
-Release notes follow this structure (see v1.11.0 as the reference):
+Vält shipped userland follows the project's permissive-only policy, with the Linux
+kernel handled under its separately defined exception outside this application
+repository.
 
-1. One-line verdict + upgrade recommendation.
-2. Sections: Security, Features, Performance, Notable fixes.
-3. **Behavior changes for self-hosters** — anything that can require a config
-   tweak on upgrade gets an explicit callout.
-4. **Thanks** — credit every contributor by handle with what they shipped
-   (collect via `git log <last-tag>..<tag>` + `gh pr view` for handles), plus
-   the issue reporters collectively. Never skip this section.
+The final-artifact SBOM/licence job is fail closed: unknown or disallowed runtime
+licences fail CI rather than being silently accepted.
 
-Announce on Discord after `v1-latest` is live.
+Boundary rules relevant to this fork:
+
+- `imageio-ffmpeg` must not introduce a bundled FFmpeg executable into the final
+  artefact.
+- FFmpeg, when media functionality requires it, is operator supplied/external and is
+  not redistributed as a Vält userland component.
+- Ollama and Speaches integrations are optional external services. Their software,
+  model, and container licences are evaluated separately from Vält redistribution.
+- SurrealDB 2.6.5 is a migration-test fixture, not a shipped runtime dependency.
+- Container/base-OS packages are inventoried as the deployment-reference image
+  boundary; they must not be conflated with the Vält permissive-only shipped-userland
+  policy.
+
+## Cutting version metadata
+
+When a version is required:
+
+1. Confirm the exact `main` commit has a fully green `test.yml` run.
+2. Open a focused cut PR for the version/changelog change.
+3. Merge only after its permanent CI is green.
+4. Create the Git tag only from the verified `main` commit.
+5. If required, create GitHub release notes from that tag.
+
+Creating either the tag or GitHub release **does not publish an image in this
+fork**.
+
+## Publishing boundary
+
+Automated image publication is intentionally absent.
+
+Do not:
+
+- invoke `build-and-release.yml` — it does not exist in this fork;
+- claim that `main` publishes `v1-dev`;
+- claim that GitHub release publication pushes `v1-latest`;
+- substitute upstream `lfnovo/*` registry images for a Vält-built release; or
+- add ad-hoc registry credentials/publishing commands to bypass the permanent
+  compliance gates.
+
+If automated Vält artefact publishing is introduced later, it must arrive through a
+separately reviewed engineering change. At minimum it must:
+
+1. use immutable/pinned build inputs where practical;
+2. publish only an artefact built from the verified commit;
+3. run the final-image SBOM/licence policy on the exact artefact being published;
+4. preserve the external FFmpeg/Ollama/Speaches boundaries;
+5. preserve PostgreSQL-only normal runtime behaviour; and
+6. make registry destinations and promotion semantics explicit.
+
+Until then, the release process ends at verified local artefacts plus optional Git
+metadata.
+
+## Known gotchas
+
+- **Never leave a version bump uncommitted.** Keep version/changelog changes in a
+  focused cut PR so they cannot leak into unrelated work.
+- **A post-tag blocker requires re-verification.** Move/recreate release metadata only
+  after the fix is merged and the new commit has passed the full permanent suite and
+  applicable artefact gates.
+- **Containerised app + host services:** credentials pointing at local Ollama or LM
+  Studio instances generally require a host-reachable address such as
+  `host.docker.internal`, depending on the operator environment.
+- **Legacy database migration is separate from normal boot.** Normal application
+  startup must never require SurrealDB.
+- **Release-candidate data copies use PostgreSQL from `DATABASE_URL`.** Do not infer a
+  database from whichever local process happens to be running.
+- **Local image tags can shadow other tags.** Confirm which image digest is actually
+  under test whenever validating a candidate.
+- **Judge optional-runtime gating on a clean artefact, not a developer venv.** A local
+  environment can contain optional packages installed out of band.
 
 ## Retro
 
-Close every release by asking: what should improve in this process? Apply the
-accepted improvements immediately — update this document, the scripts under
-`scripts/release-test/`, and the decision log while the context is fresh.
-
-## Docker Image Publishing (reference)
-
-| Command | What it does | Updates latest? |
-|---------|--------------|-----------------|
-| `make docker-build-local` | Build for current platform only (tags `<version>` + `local`) | No registry push |
-| CI *Build and Release* (`push_latest=false`) | Push version tags via CI credentials | ❌ No |
-| GitHub release published (non-prerelease) | CI pushes version + `v1-latest` | ✅ Yes |
-| `make docker-push` / `docker-push-latest` | Local equivalents (need `docker login`) | ❌ / ✅ |
-| `make tag` | Create and push a git tag matching `pyproject.toml` | — |
-
-- **Platforms:** `linux/amd64`, `linux/arm64`
-- **Registries:** Docker Hub + GitHub Container Registry
-- **Image variants:** regular + single-container (`-single`). Both are built
-  from the same `Dockerfile`: regular is the default/`runtime` target, single
-  is `--target single`
-- **Version source:** `pyproject.toml`
-- Build issues: `docker builder prune`, then `make docker-buildx-reset`
-
-## Known Gotchas
-
-- **Never leave the version bump uncommitted on a branch.** Editing
-  `pyproject.toml` / `CHANGELOG.md` for the cut and then switching branches
-  carries those unstaged changes along, and the next `git add -A` sweeps the
-  bump into an unrelated fix PR — the version silently ships inside a `fix(...)`
-  commit. The cut is always the **last** step, on its own branch, committed
-  immediately; if you must build an image early (which needs the bumped
-  version), do it on a throwaway branch and `git stash`/discard before moving
-  on (v1.14.0 lesson).
-- **A fix that lands after the cut requires a full re-cut, not a tag nudge.**
-  If the release was tagged but not yet published (no GitHub release, no
-  `v1-latest`) and a blocker is found in bucket C, the tag must move to the new
-  commit AND the version images must be rebuilt — a stale tag or stale registry
-  image will otherwise be what publication promotes to `v1-latest`. The exact
-  sequence is in `runbook.md` → "Re-cut after a post-tag fix" (v1.14.0 lesson).
-- **RC stack on non-default ports needs `API_URL`** or the browser talks to
-  `host:5055` — on a dev machine that is the development API (data crossover).
-  `rc-stack.sh` sets it; remember this for any custom setup.
-- **Containerized app + host services**: credentials pointing at local
-  services (Ollama, LM Studio) need `http://host.docker.internal:<port>`.
-- **Legacy database migration** is tested separately from normal release boot. PostgreSQL/pgvector is the only runtime database; use `scripts/migrate_surreal_to_postgres.py` only when validating an import from a pre-PostgreSQL installation.
-- **Release-candidate data copies** must identify PostgreSQL from `DATABASE_URL` rather than from whichever local database process happens to be running.
-- **Dev-machine ports may belong to other projects**: check who owns
-  3000/5055/8000 (`lsof -nP -iTCP:<port> -sTCP:LISTEN` + the process cwd)
-  before starting or killing anything. The frontend runs fine on an alternate
-  port for smoke testing (`PORT=3001 npm run dev`) — pass the URL to the
-  smoke agent.
-- **Manual error-path checklist items must be validated against the code
-  first**: some "missing configuration" scenarios are deliberate fallbacks,
-  not errors (e.g. transformation and tools defaults fall back to the chat
-  default). Confirm the expected behavior in the provisioning code before
-  putting "should show an error" on the bucket-C checklist.
-- **The test suite runs against the live dev database** when a developer
-  `.env` is loaded. During bucket A, snapshot record counts per table before
-  and after the suite (e.g. credentials count) — a diff means a test is
-  leaking writes (this caught 48 leaked `Test` credentials in v1.12.0).
-- **A local `docker-build-local` tag shadows the pushed image.** Both are
-  `lfnovo/open_notebook:<ver>`, so Phase 6 could verify your own local build
-  instead of the registry artifact. `rc-stack.sh up` now `docker pull`s the tag
-  by default; if you boot the image any other way, pull first (v1.13.0 lesson).
-- **Judge opt-in runtime gating on a clean image, not the dev venv.** A dev
-  venv may have `crawl4ai`/`docling` installed out-of-band (not via the opt-in
-  flag), so `GET /api/capabilities` reports them available and the UI enables
-  the engines — which does NOT reflect the lean default image. Verify the
-  gating on the RC stack (fresh pushed image) where the runtimes are genuinely
-  absent until enabled. To exercise the real install path with your data, use
-  `make release-stack TAG=<ver> DUMP=<dump>` plus `rc-stack.sh ... --with-runtimes`
-  (sets `OPEN_NOTEBOOK_ENABLE_DOCLING`/`_CRAWL4AI`; first boot is slow) (v1.13.0 lesson).
+After a release or major hardening change, update this document when the verified
+process changes. Documentation must describe the workflows and boundaries that
+actually exist in this fork; it must not inherit upstream publication assumptions by
+accident.

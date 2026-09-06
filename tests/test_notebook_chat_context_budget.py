@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from open_notebook.ai.context_window import _ollama_architecture_context_length
 from open_notebook.exceptions import ExternalServiceError
-from open_notebook.graphs.chat import call_model_with_messages
+from open_notebook.graphs.chat import ThreadState, call_model_with_messages
 from open_notebook.utils.notebook_chat_context import prepare_notebook_chat_context
 
 
@@ -83,6 +83,7 @@ async def test_oversized_source_uses_scoped_semantic_chunks():
     assert "350GT" in full_text
     assert "Question-relevant excerpts" in full_text
     retrieve.assert_awaited_once()
+    assert retrieve.await_args is not None
     assert retrieve.await_args.args[1] == ["source:car"]
 
 
@@ -125,7 +126,7 @@ def test_empty_final_answer_is_not_returned_as_blank_chat_message():
     async def prepared(_state, _model_id):
         return [HumanMessage(content="question")], model
 
-    state = {
+    state: ThreadState = {
         "messages": [HumanMessage(content="question")],
         "notebook": None,
         "context": None,

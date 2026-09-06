@@ -1,72 +1,89 @@
-# Runbook — exact commands for the cut-and-publish phases
+# Runbook — Vält fork release verification
 
-Gotchas live in `.github/RELEASE_PROCESS.md` → Known Gotchas. This file is
-the command reference.
+This fork does **not** currently publish container images or development images from
+GitHub Actions. The only permanent workflow is `.github/workflows/test.yml`, which
+is a verification/compliance gate.
 
-## Version images via CI (Phase 5)
+Do not invoke `build-and-release.yml`, assume a GitHub release publishes images, or
+use upstream registry tags as evidence that this fork has shipped an artifact.
 
-```bash
-gh workflow run build-and-release.yml --ref main -f push_latest=false
-gh run list --workflow=build-and-release.yml --limit 1     # grab the id
-gh run watch <run-id> --exit-status                        # background it
-```
+See `.github/RELEASE_PROCESS.md` for the governing release boundary.
 
-## Verify pushed manifests
+## Verify `main`
 
 ```bash
-for ref in lfnovo/open_notebook:<ver> lfnovo/open_notebook:<ver>-single ghcr.io/lfnovo/open-notebook:<ver>; do
-  docker manifest inspect "$ref" | python3 -c "import json,sys; d=json.load(sys.stdin); print(sorted(set(m['platform']['architecture'] for m in d.get('manifests',[]) if m['platform']['architecture']!='unknown')))"
-done
-# expect ['amd64', 'arm64'] for each; repeat with v1-latest after publication
+gh workflow run test.yml --ref main
+gh run list --workflow=test.yml --limit 1
+gh run watch <run-id> --exit-status
 ```
 
-## RC stack with a copy of the owner's dev data (Phase 6)
+A releasable commit must pass every permanent job, including:
+
+- PostgreSQL runtime-boundary checks;
+- backend lint, typing, and tests;
+- frontend lint, tests, production build, and dependency audit;
+- real SurrealDB-to-PostgreSQL migration parity;
+- final-image SBOM and licence policy enforcement; and
+- documentation link checks.
+
+## Local image confidence gate
+
+A green source tree is not by itself proof that a container artifact boots. For a
+local candidate, build and exercise the image without publishing it:
 
 ```bash
-# 1. Identify the PostgreSQL instance from DATABASE_URL.
-# 2. Take a consistent plain-SQL logical copy from the running instance.
-#    rc-stack.sh imports supplied dumps through psql, so do not use pg_dump's
-#    custom/archive format here.
-pg_dump --format=plain --file=/tmp/dev-dump.sql "$DATABASE_URL"
-# 3. Boot (rc-stack.sh docker-pulls the pushed tag by default, so a local
-#    build can't shadow the registry artifact):
-make release-stack TAG=<ver> DUMP=/tmp/dev-dump.sql
-#    To exercise the opt-in heavy runtimes (Docling + Crawl4AI) on the pushed
-#    image with this data, append the flag:
-#    bash scripts/release-test/rc-stack.sh up <ver> /tmp/dev-dump.sql --with-runtimes
-# 4. Sanity: credentials decrypt (uses the dev encryption key from .env):
-curl -s http://localhost:15055/api/credentials | python3 -c "import json,sys; c=json.load(sys.stdin); print(len(c), 'creds,', sum(1 for x in c if x.get('decryption_error')), 'decrypt errors')"
-# 5. Opt-in gating is only meaningful on this fresh image (a dev venv may have
-#    the runtimes installed out-of-band): GET /api/capabilities should report
-#    both false until --with-runtimes installs them.
+make docker-build-local
+make release-test TAG=<new> OLD_TAG=<previous>
 ```
 
-Remind the owner: in-container credentials pointing at host services need
-`http://host.docker.internal:<port>` (Ollama, LM Studio).
+The Dockerfile/container path is retained as an operator/developer deployment
+reference. It is not the Vält shipped-userland boundary. In particular, external
+FFmpeg and optional Ollama/Speaches services are not redistributed as Vält runtime
+components.
 
-## Publish (Phase 7 — after explicit GO)
+## Legacy database migration verification
+
+PostgreSQL/pgvector is the only runtime database. SurrealDB is permitted only as a
+legacy migration source/test fixture.
+
+The permanent CI migration-parity job starts the exact pinned legacy fixture and
+verifies records, IDs, relationships, embeddings, vector search, text search, and
+non-empty-target refusal. Do not add SurrealDB back to the normal runtime path.
+
+For a manual legacy import, use:
 
 ```bash
-gh release create v<ver> --title "v<ver> — <theme>" --notes-file <notes.md> --latest
-# publication (non-prerelease) triggers the workflow that pushes v1-latest
-gh run list --workflow=build-and-release.yml --limit 1 && gh run watch <id> --exit-status
+python scripts/migrate_surreal_to_postgres.py --help
 ```
 
-## Label shipped issues (after owner OK)
+The migration-specific `SURREAL_*` source settings are allowed only at that import
+boundary.
+
+## Publishing boundary
+
+There is intentionally no automated image-publishing workflow in this fork.
+Creating a Git tag or GitHub release does **not** publish a Docker/OCI image.
+
+If image publication is reintroduced later, it requires a separately reviewed
+workflow/process that:
+
+1. pins mutable build/runtime references;
+2. preserves the permissive-only Vält shipped-userland licence policy;
+3. generates and validates the final-artifact SBOM before publication;
+4. never silently bundles FFmpeg or optional external model/runtime services; and
+5. publishes only after the permanent verification workflow is green.
+
+Until such a workflow exists, stop after verification; do not substitute an
+upstream `lfnovo/*` image or registry operation for a Vält release.
+
+## Cleanup
 
 ```bash
-# only actual closed ISSUES (changelog refs mix issues and PR numbers):
-for n in <numbers>; do
-  STATE=$(gh api "repos/lfnovo/open-notebook/issues/$n" --jq 'if .pull_request then "pr" else .state end')
-  [ "$STATE" = "closed" ] && gh issue edit "$n" --add-label released
-done
+make release-stack-down 2>/dev/null || true
+rm -f /tmp/dev-dump.sql
+rm -rf /tmp/onrel-*
+docker ps --format '{{.Names}}' | grep onrel || true
+git status --short
 ```
 
-## Cleanup (Phase 8)
-
-```bash
-make release-stack-down
-rm -f /tmp/dev-dump.sql; rm -rf /tmp/onrel-*
-docker ps --format '{{.Names}}' | grep onrel   # must be empty
-git status --short                              # must be clean on main
-```
+The working tree should be clean before any tag or release metadata is created.

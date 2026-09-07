@@ -1,66 +1,70 @@
-# Test Matrix Template — change → risk → bucket
+# Test Matrix Template — change → risk → evidence
 
-Instantiate against the real release diff. The unit of planning is the
-**risk**, not the feature: for each change ask *what can this break, and for
-whom?* Security hardening gets the inverse question too: *does the protection
-break legitimate use?* (v1.11.0 examples: SSRF guard vs. self-hosted Ollama on
-localhost; body-size cap vs. big uploads; Host validation vs. reverse proxies).
+Instantiate this against the real release diff. The planning unit is the **risk**:
+for each change ask what can break, for whom, and what proves the intended behaviour.
+For security hardening also ask whether the protection breaks legitimate use.
 
-## Bucket A — automated now (run all of it)
+## Bucket A — permanent automated gates
 
-Checklist design rule (v1.12.0 retro): before putting an error-path item on
-the bucket-C checklist ("X unconfigured should show an error"), verify in the
-provisioning code that it IS an error — transformation and tools defaults
-deliberately fall back to the chat default (`open_notebook/ai/models.py`).
+The final candidate must pass `.github/workflows/test.yml` in full.
 
-| Check | Command / tool |
+| Check | Evidence |
 |---|---|
-| Backend suite | `uv run pytest tests/` |
-| Lint & types | `ruff check .` · `uv run python -m mypy .` (both are required CI gates; mypy runs at 0 errors — `uv sync --extra dev` first if mypy is missing locally) |
-| Frontend | `npm run lint` · `npm run test` · `npm run build` (run `npm ci` first if deps changed) |
-| Full happy path | smoke-e2e agent on the local dev stack (API + Playwright UI) |
-| Dependency audit | Dependabot alerts + `npm audit` |
-| Targeted probes | see below — pick per matrix |
+| Runtime boundary | `scripts/check_no_surreal_runtime.py` passes |
+| Backend | lock check + Ruff + mypy + full pytest suite |
+| Frontend | clean install + lint + tests + production build |
+| Frontend dependency security | `npm audit --audit-level=moderate` passes |
+| Legacy migration parity | real pinned SurrealDB 2.6.5 → PostgreSQL integration job passes |
+| Final artefact compliance | image build + Syft SBOM + fail-closed licence policy pass |
+| Documentation | link checker passes |
 
-### Probe library (extend per release)
+### Targeted probe library
 
-Regression-of-legitimate-use probes proven in v1.11.0 — adapt endpoints/values:
+Add probes when the release diff touches the relevant surface:
 
-- Upload just under / just over the body cap → accepted / 413
-- Source ingestion of a `localhost` URL → ACCEPTED (self-hosted is legitimate);
-  link-local/metadata URL → rejected with a clear 4xx
-- Frontend `/config` with clean vs. malformed `Host` → sane URL / fallback, never 5xx
-- SSE endpoints stream progressively (first byte ≪ total time via `curl -N -w`)
-- CORS preflight with and without `CORS_ORIGINS` set
-- Every enum/allowlisted query param exercised with **each** valid value +
-  one invalid (v1.11.0: `sort_by=title` 500'd while all siblings passed —
-  test the whole surface, not one sample)
-- Oversized array inputs and unknown-provider payloads → clean 422, not 500
-- Anything an LLM or UI writes through: verify the full path in a real
-  browser, not just the API (mirror-bug lesson: frontend dropped the field
-  AND the API ignored null — only end-to-end caught it)
+- Upload just under/over a body cap → accepted / clean 4xx.
+- Legitimate self-hosted/localhost integrations → accepted while link-local or
+  metadata endpoints remain blocked where policy requires.
+- Reverse-proxy/Host/CORS behaviour → expected fallback or validation, never 5xx.
+- SSE endpoints → progressive streaming rather than buffered completion.
+- Every enum/allowlisted query parameter → all valid values plus at least one invalid
+  value.
+- Oversized arrays and unknown-provider payloads → typed 4xx, not 500.
+- UI-written settings/fields → verify the complete browser → API → persistence path.
+- PostgreSQL relation/ID changes → verify both domain API behaviour and storage
+  semantics.
+- Media paths → verify that normal application boot remains independent of an
+  operator-supplied FFmpeg binary.
 
-## Bucket B — automatable with investment (decide with the owner)
+## Bucket B — automate when it compounds
 
-Standing candidates; the image gate graduated from here to `make release-test`:
+Candidates include new end-to-end scenarios, recurring regression probes, and manual
+checks that repeatedly catch real defects. Promote a check when automation will pay
+for itself across future releases.
 
-- New end-to-end scenarios for this release's features
-- CI-ification of any probe that proved valuable twice
-- Anything the owner keeps having to verify by hand
+Do not create a compatibility shim merely to keep an old test green. Tests should
+follow the current PostgreSQL-native repository seams.
 
-Decision rule: build it if it compounds for future releases and costs < the
-manual verification it replaces; otherwise verify manually this once and note
-it here for next time.
+## Bucket C — owner/manual confidence
 
-## Bucket C — the release owner (start EARLY, in parallel)
+Tailor this to the actual release. Typical checks are:
 
-- Provider connection tests with **real credentials** (prioritize providers
-  whose code changed); one discover-models; one chat per main provider
-- One podcast with real TTS on a dense notebook
-- Visual/UX tour (~10 min) of every UI change in the release, plus dark mode
-  sampling
-- Phase 6: the pushed image via `make release-stack`
+- real provider credentials for changed integrations;
+- a real TTS/podcast flow when media code changed;
+- focused visual/UX review of changed UI;
+- local candidate-image verification on the operator environment when container
+  behaviour changed.
 
-Deliver this as a concrete checklist with expected outcomes, tailored to what
-the release actually touched and to the credentials the owner actually has
-(`GET /api/credentials` tells you).
+There is no "pushed image" bucket in the current Vält fork because this repository
+does not have an automated image-publishing workflow. Do not substitute an upstream
+registry image for the local/verified candidate.
+
+## Decision record
+
+For each material release risk record:
+
+| Change | Failure mode | A/B/C | Evidence required | Result |
+|---|---|---|---|---|
+| `<change>` | `<what could break>` | A | `<test/job/probe>` | pending |
+
+A release candidate remains NO-GO while any required evidence is missing or failing.

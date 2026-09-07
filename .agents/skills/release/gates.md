@@ -1,44 +1,54 @@
-# Gates — what needs a human, what doesn't
+# Gates — what needs a human, what does not
 
-The contract that made v1.11.0 safe. When in doubt, ask — a blocked action is
-feedback, not an obstacle to route around.
+This file defines the action boundary for release verification in the Vält fork.
+The governing process is `.github/RELEASE_PROCESS.md`.
 
-## You may do autonomously (once the release run is underway)
+## May be done autonomously once release work is underway
 
-- Run any test, build, probe or analysis; start/stop local dev services
-- Create branches, commits, and open PRs
-- Spawn subagents (smoke-e2e, investigation, fixes)
-- Build/pull Docker images locally; run the release-test harness and RC stack
-- Dispatch the *Build and Release* CI workflow with `push_latest=false`
-  (version tags only — this is the agreed pre-verification push)
+- Run tests, builds, probes and analysis.
+- Start/stop disposable local development and test services.
+- Create branches, commits and pull requests.
+- Build/pull container images locally for verification.
+- Run the local release-test harness.
+- Dispatch `.github/workflows/test.yml` manually when useful.
+
+The permanent CI workflow is verification-only. There is no authorized automated
+container-publishing workflow in this fork.
 
 ## Requires explicit, in-session authorization from the owner
 
 | Action | Why |
 |---|---|
-| Merging PRs you authored | two-party review; ask once per session ("merge when clean?") and honor the answer |
-| Publishing the GitHub release | public, triggers `v1-latest` — the point of no return |
-| Anything that pushes `v1-latest` | users receive it immediately |
-| Creating GitHub issues | external artifacts the owner may not want |
-| Mass-labeling issues (`released`) | bulk modification of shared state |
-| Touching the owner's dev data | only ever work on **copies** (export/import); never mount or mutate originals |
+| Merging a PR authored during the session | Repository state change requiring explicit owner authority unless already granted for the run |
+| Creating/publishing a GitHub release | Public release metadata |
+| Introducing or using a registry-publishing workflow | Creates externally distributed artefacts and changes the supply-chain boundary |
+| Creating GitHub issues | External repository artefacts the owner may not want |
+| Bulk/mass labelling | Broad shared-state modification |
+| Touching owner/dev production-like data | Work only on explicit copies; never mutate originals |
 
 ## Never
 
-- Push directly to main
-- Publish a prerelease/release to work around a blocked step
-- Mark a phase complete with failing checks ("GO with known issues is worse
-  than a NO-GO that catches problems before users do")
+- Push directly to `main`.
+- Invoke a nonexistent/removed `build-and-release.yml` workflow.
+- Use upstream `lfnovo/*`, `v1-dev`, or `v1-latest` artefacts as substitutes for a
+  Vält release.
+- Mark a gate complete while required checks are failing.
+- Weaken the PostgreSQL-only runtime boundary to make tests pass.
+- Add SurrealDB to normal runtime; it remains migration/test-fixture only.
+- Bypass or downgrade the final-image SBOM/licence policy for publication.
 
-## Re-test policy after each fix merge
+## Re-test policy after a fix
 
-- Cheap suite (pytest + lint + frontend tests/build): **always**
-- smoke-e2e / image gate: only if the fix touches what they cover
-- Owner's manual verification: only if the fix touches what they verified
-- The final image gate (Phase 5.3) always runs on the exact release artifact
+- Permanent `test.yml`: **always** on the final candidate commit.
+- Local smoke/image gate: repeat when the fix can affect the built artefact or boot
+  path.
+- Manual owner checks: repeat when the fix touches what was manually verified.
+- Final-image SBOM/licence enforcement: always applies to the exact container
+  reference artefact built by CI.
 
-## GO/NO-GO
+## GO / NO-GO
 
-A release is GO when: bucket A fully green · image gate green (fresh +
-upgrade) · bucket C signed off by the owner · no open release-regression
-findings · Dependabot highs resolved or explicitly accepted.
+A candidate is GO for version metadata only when permanent CI is fully green and all
+release-specific risk checks are satisfied. A separate explicit decision and a
+separately reviewed publishing mechanism are required before any Vält artefact is
+distributed externally.

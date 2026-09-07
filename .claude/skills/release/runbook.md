@@ -1,111 +1,89 @@
-# Runbook — exact commands for the cut-and-publish phases
+# Runbook — Vält fork release verification
 
-Gotchas live in `.github/RELEASE_PROCESS.md` → Known Gotchas. This file is
-the command reference.
+This fork does **not** currently publish container images or development images from
+GitHub Actions. The only permanent workflow is `.github/workflows/test.yml`, which
+is a verification/compliance gate.
 
-## Version images via CI (Phase 5)
+Do not invoke `build-and-release.yml`, assume a GitHub release publishes images, or
+use upstream registry tags as evidence that this fork has shipped an artifact.
+
+See `.github/RELEASE_PROCESS.md` for the governing release boundary.
+
+## Verify `main`
 
 ```bash
-gh workflow run build-and-release.yml --ref main -f push_latest=false
-gh run list --workflow=build-and-release.yml --limit 1     # grab the id
-gh run watch <run-id> --exit-status                        # background it
+gh workflow run test.yml --ref main
+gh run list --workflow=test.yml --limit 1
+gh run watch <run-id> --exit-status
 ```
 
-## Verify pushed manifests
+A releasable commit must pass every permanent job, including:
+
+- PostgreSQL runtime-boundary checks;
+- backend lint, typing, and tests;
+- frontend lint, tests, production build, and dependency audit;
+- real SurrealDB-to-PostgreSQL migration parity;
+- final-image SBOM and licence policy enforcement; and
+- documentation link checks.
+
+## Local image confidence gate
+
+A green source tree is not by itself proof that a container artifact boots. For a
+local candidate, build and exercise the image without publishing it:
 
 ```bash
-for ref in lfnovo/open_notebook:<ver> lfnovo/open_notebook:<ver>-single ghcr.io/lfnovo/open-notebook:<ver> ghcr.io/lfnovo/open-notebook:<ver>-single; do
-  docker manifest inspect "$ref" | python3 -c "import json,sys; d=json.load(sys.stdin); print(sorted(set(m['platform']['architecture'] for m in d.get('manifests',[]) if m['platform']['architecture']!='unknown')))"
-done
-# expect ['amd64', 'arm64'] for all four (`make docker-push` publishes both
-# registries × {plain, -single}); repeat with v1-latest and v1-latest-single
-# on both registries after publication
-```
-
-## RC stack with a copy of the owner's dev data (Phase 6)
-
-```bash
-# 1. Identify the PostgreSQL instance from DATABASE_URL.
-# 2. Take a consistent plain-SQL logical copy from the running instance.
-#    rc-stack.sh imports supplied dumps through psql, so do not use pg_dump's
-#    custom/archive format here.
-pg_dump --format=plain --file=/tmp/dev-dump.sql "$DATABASE_URL"
-# 3. Boot (rc-stack.sh docker-pulls the pushed tag by default, so a local
-#    build can't shadow the registry artifact):
-make release-stack TAG=<ver> DUMP=/tmp/dev-dump.sql
-#    To exercise the opt-in heavy runtimes (Docling + Crawl4AI) on the pushed
-#    image with this data, append the flag:
-#    bash scripts/release-test/rc-stack.sh up <ver> /tmp/dev-dump.sql --with-runtimes
-# 4. Sanity: credentials decrypt (uses the dev encryption key from .env):
-curl -s http://localhost:15055/api/credentials | python3 -c "import json,sys; c=json.load(sys.stdin); print(len(c), 'creds,', sum(1 for x in c if x.get('decryption_error')), 'decrypt errors')"
-# 5. Opt-in gating is only meaningful on this fresh image (a dev venv may have
-#    the runtimes installed out-of-band): GET /api/capabilities should report
-#    both false until --with-runtimes installs them.
-```
-
-Remind the owner: in-container credentials pointing at host services need
-`http://host.docker.internal:<port>` (Ollama, LM Studio).
-
-## Publish (Phase 7 — after explicit GO)
-
-```bash
-gh release create v<ver> --title "v<ver> — <theme>" --notes-file <notes.md> --latest
-# publication (non-prerelease) triggers the workflow that pushes v1-latest
-gh run list --workflow=build-and-release.yml --limit 1 && gh run watch <id> --exit-status
-```
-
-## Re-cut after a post-tag fix (Phase 4 ↔ 5 loop)
-
-When a blocker is found *after* the tag exists but *before* publication (no
-GitHub release, no `v1-latest` yet), the fix goes through the normal PR flow,
-then the release is re-cut. `pyproject.toml` stays at the same version — the tag
-moves to the new commit. Exact sequence:
-
-```bash
-# 1. Fix merged to main; sync and confirm the version is unchanged
-git checkout main && git pull && grep '^version' pyproject.toml   # still <ver>
-
-# 2. Cheap suite (re-test policy) before re-tagging
-uv run pytest tests/ -q && ruff check .        # + frontend if it was touched
-
-# 3. Move the tag: delete local + remote, recreate on the new HEAD
-git tag -d v<ver>
-git push origin :refs/tags/v<ver>
-make tag                                       # recreates v<ver> on HEAD
-git rev-parse v<ver> && git rev-parse HEAD      # must match
-
-# 4. Rebuild the image and RE-RUN THE IMAGE GATE on the re-cut artifact
-docker rmi lfnovo/open_notebook:<ver> lfnovo/open_notebook:local 2>/dev/null
 make docker-build-local
-make release-test TAG=<ver> OLD_TAG=<prev>     # fresh + upgrade + probes
-
-# 5. Re-push the version images from the fixed commit (overwrites the stale ones)
-gh workflow run build-and-release.yml --ref main -f push_latest=false
-#    then watch the run and re-verify the <ver> manifests (section above)
-
-# 6. Re-boot the RC stack on the fresh pushed image for the owner's re-GO
-make release-stack TAG=<ver> DUMP=/tmp/dev-dump.sql
+make release-test TAG=<new> OLD_TAG=<previous>
 ```
 
-Only after the owner re-GOes does publication proceed. The published-release CI
-run promotes whatever the version tag/images currently are to `v1-latest`, so a
-skipped rebuild here means users get the un-fixed artifact.
+The Dockerfile/container path is retained as an operator/developer deployment
+reference. It is not the Vält shipped-userland boundary. In particular, external
+FFmpeg and optional Ollama/Speaches services are not redistributed as Vält runtime
+components.
 
-## Label shipped issues (after owner OK)
+## Legacy database migration verification
+
+PostgreSQL/pgvector is the only runtime database. SurrealDB is permitted only as a
+legacy migration source/test fixture.
+
+The permanent CI migration-parity job starts the exact pinned legacy fixture and
+verifies records, IDs, relationships, embeddings, vector search, text search, and
+non-empty-target refusal. Do not add SurrealDB back to the normal runtime path.
+
+For a manual legacy import, use:
 
 ```bash
-# only actual closed ISSUES (changelog refs mix issues and PR numbers):
-for n in <numbers>; do
-  STATE=$(gh api "repos/lfnovo/open-notebook/issues/$n" --jq 'if .pull_request then "pr" else .state end')
-  [ "$STATE" = "closed" ] && gh issue edit "$n" --add-label released
-done
+python scripts/migrate_surreal_to_postgres.py --help
 ```
 
-## Cleanup (Phase 8)
+The migration-specific `SURREAL_*` source settings are allowed only at that import
+boundary.
+
+## Publishing boundary
+
+There is intentionally no automated image-publishing workflow in this fork.
+Creating a Git tag or GitHub release does **not** publish a Docker/OCI image.
+
+If image publication is reintroduced later, it requires a separately reviewed
+workflow/process that:
+
+1. pins mutable build/runtime references;
+2. preserves the permissive-only Vält shipped-userland licence policy;
+3. generates and validates the final-artifact SBOM before publication;
+4. never silently bundles FFmpeg or optional external model/runtime services; and
+5. publishes only after the permanent verification workflow is green.
+
+Until such a workflow exists, stop after verification; do not substitute an
+upstream `lfnovo/*` image or registry operation for a Vält release.
+
+## Cleanup
 
 ```bash
-make release-stack-down
-rm -f /tmp/dev-dump.sql; rm -rf /tmp/onrel-*
-docker ps --format '{{.Names}}' | grep onrel   # must be empty
-git status --short                              # must be clean on main
+make release-stack-down 2>/dev/null || true
+rm -f /tmp/dev-dump.sql
+rm -rf /tmp/onrel-*
+docker ps --format '{{.Names}}' | grep onrel || true
+git status --short
 ```
+
+The working tree should be clean before any tag or release metadata is created.

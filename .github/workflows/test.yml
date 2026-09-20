@@ -22,7 +22,7 @@ env:
 jobs:
   runtime-boundary:
     name: Runtime and licence boundary
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -32,11 +32,9 @@ jobs:
 
   backend:
     name: Backend quality and tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     env:
-      DATABASE_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
-      POSTGRES_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
       OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-test-key
     services:
       postgres:
@@ -46,13 +44,18 @@ jobs:
           POSTGRES_PASSWORD: open_notebook
           POSTGRES_DB: open_notebook
         ports:
-          - 5432:5432
+          - 5432/tcp
         options: >-
           --health-cmd "pg_isready -U open_notebook -d open_notebook"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
     steps:
+      - name: Configure PostgreSQL endpoint
+        run: |
+          echo "DATABASE_URL=postgresql://open_notebook:open_notebook@127.0.0.1:${{ job.services.postgres.ports[5432] }}/open_notebook" >> "$GITHUB_ENV"
+          echo "POSTGRES_URL=postgresql://open_notebook:open_notebook@127.0.0.1:${{ job.services.postgres.ports[5432] }}/open_notebook" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -90,7 +93,7 @@ jobs:
 
   frontend:
     name: Frontend quality, security and build
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 25
     defaults:
       run:
@@ -131,11 +134,9 @@ jobs:
 
   migration-parity:
     name: SurrealDB to PostgreSQL migration parity
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 20
     env:
-      DATABASE_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
-      POSTGRES_URL: postgresql://open_notebook:open_notebook@127.0.0.1:5432/open_notebook
       OPEN_NOTEBOOK_ENCRYPTION_KEY: ci-test-key
     services:
       postgres:
@@ -145,13 +146,18 @@ jobs:
           POSTGRES_PASSWORD: open_notebook
           POSTGRES_DB: open_notebook
         ports:
-          - 5432:5432
+          - 5432/tcp
         options: >-
           --health-cmd "pg_isready -U open_notebook -d open_notebook"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
     steps:
+      - name: Configure PostgreSQL endpoint
+        run: |
+          echo "DATABASE_URL=postgresql://open_notebook:open_notebook@127.0.0.1:${{ job.services.postgres.ports[5432] }}/open_notebook" >> "$GITHUB_ENV"
+          echo "POSTGRES_URL=postgresql://open_notebook:open_notebook@127.0.0.1:${{ job.services.postgres.ports[5432] }}/open_notebook" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -171,16 +177,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run -d --name surreal-parity -p 127.0.0.1:8000:8000 \
+          container="surreal-parity-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_JOB}"
+          docker run -d --name "$container" -p 127.0.0.1::8000 \
             surrealdb/surrealdb:v2.6.5 \
             start --log info --user root --pass root memory
+          host_port="$(docker port "$container" 8000/tcp | sed 's/.*://')"
+          surreal_url="http://127.0.0.1:$host_port"
+          echo "SURREAL_CONTAINER=$container" >> "$GITHUB_ENV"
+          echo "SURREAL_URL=$surreal_url" >> "$GITHUB_ENV"
           for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:8000/health >/dev/null; then
+            if curl --fail --silent "$surreal_url/health" >/dev/null; then
               exit 0
             fi
             sleep 1
           done
-          docker logs surreal-parity
+          docker logs "$container"
           exit 1
 
       - name: Seed semantic migration fixture
@@ -200,7 +211,7 @@ jobs:
             -H 'surreal-ns: open_notebook' \
             -H 'surreal-db: open_notebook' \
             --data-binary @/tmp/parity.surql \
-            http://127.0.0.1:8000/sql | tee /tmp/seed-result.json
+            "$SURREAL_URL/sql" | tee /tmp/seed-result.json
           python3 - <<'PY'
           import json
           payload = json.load(open('/tmp/seed-result.json', encoding='utf-8'))
@@ -210,7 +221,7 @@ jobs:
       - name: Run production migration
         run: >-
           uv run python scripts/migrate_surreal_to_postgres.py
-          --surreal-url http://127.0.0.1:8000
+          --surreal-url "$SURREAL_URL"
           --surreal-user root
           --surreal-password root
           --surreal-namespace open_notebook
@@ -221,11 +232,11 @@ jobs:
 
       - name: Stop legacy fixture
         if: always()
-        run: docker rm -f surreal-parity || true
+        run: docker rm -f "$SURREAL_CONTAINER" || true
 
   image-sbom:
     name: Runtime image SBOM and licence policy
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 35
     steps:
       - name: Checkout
@@ -257,7 +268,7 @@ jobs:
 
   docs:
     name: Documentation links
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
